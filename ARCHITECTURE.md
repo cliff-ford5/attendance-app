@@ -1,0 +1,143 @@
+# Attendance App — Architecture
+
+`CLAUDE.md` is the source of truth for product context. This file is the technical architecture — how the codebase is actually organized and why.
+
+Adapted from the real, current architecture pattern already proven in `../tskr-mobile` (a sibling Expo project, same author) — not invented from scratch. See that repo's own `ARCHITECTURE.md` for the original. Same underlying principle the CRM (`../crm`) uses too, just expressed differently for a mobile/feature-first codebase instead of a web/layer-first one: **isolate the backend behind an interface so the UI never depends on it directly.**
+
+## Directory Blueprint
+
+**Feature-First Modular Architecture** — code is grouped by domain feature, not by technical layer.
+
+```
+src/
+  app/                     # Routing layer (Expo Router) — thin wrappers only, see Rule #1
+    (auth)/                # route group: login, register
+    (employee)/            # route group: employee-facing tabs (check-in, attendance, tasks, leave, KPI)
+    (admin)/               # route group: admin-facing tabs (staff roster, attendance, tasks, leave, KPI overview)
+      staff/               # nested stack: roster list -> tap an employee -> their profile ([id].tsx) -> locations.tsx
+  features/                # Business logic layer — one folder per real domain
+    auth/                  # signed-in user's own session/profile only
+    staff/                 # admin browsing/managing *other* employees (roster, profile) — not auth
+    locations/             # admin CRUD on `locations` (name/lat/lng/geofence radius/expected hours) — the data attendance's Phase 2 geofencing checks against
+    attendance/            # check-in/out, geofence auto-checkout, late/early flags
+    tasks/                 # task assignment, status, deadlines, priority
+    leave/                 # time-off requests + admin approval — separate from attendance (planned vs. daily)
+    kpi/                   # performance tracking/derivation
+    <feature>/
+      screens/             # high-level page components
+      components/          # feature-specific UI
+      services/            # feature-specific API calls — the ONLY place this feature talks to Supabase
+      hooks/                # feature-specific hooks (e.g. useAttendanceStatus)
+      lib/                 # feature-local pure logic with no Supabase/React dependency (e.g. attendance's workHours.ts late/early math) — add only when real pure logic exists, not preemptively
+      types.ts             # feature-specific data contracts
+  components/              # global shared UI (buttons, cards, etc. used by 3+ features)
+  services/                # global API client (Supabase client instance) — see Rule #3
+  lib/                     # utilities/helpers
+  hooks/                   # global hooks
+  types/                   # global TypeScript definitions
+  constants/               # theme/design tokens
+  assets/
+```
+
+## The Golden Rules
+
+**Rule #1 — Thin Routing.** `app/` never contains business logic, state, or Supabase calls. Its only job is mapping a route to a feature screen.
+
+```tsx
+// Bad — app/(employee)/index.tsx doing real work
+export default function Index() {
+  const [status, setStatus] = useState(...);
+  useEffect(() => { supabase.from('attendance')... }, []);
+  return <View>...</View>;
+}
+
+// Good — app/(employee)/index.tsx
+export { CheckInScreen as default } from '@/features/attendance/screens/CheckInScreen';
+```
+
+**Rule #2 — Feature Encapsulation.** Each `features/<name>/` folder is self-contained: its own screens, components, services, hooks, types. A feature should be understandable by opening one folder, not hunting across the codebase.
+
+**Rule #3 — API-Agnostic Services.** All Supabase calls happen inside a feature's `services/` file, never directly inside a component or screen. If the backend ever changes (e.g. a different Postgres host, or splitting into a real API layer later), only `services/` files change — UI code stays untouched. Same reasoning as the CRM's repository-interface pattern, adapted for this codebase's shape.
+
+## Data Flow
+
+Component → Hook → Service → Supabase client → back up to render.
+
+A screen never imports `supabase` directly. It calls a hook (e.g. `useCheckIn()`), which calls a service function (e.g. `attendanceService.checkIn()`), which is the only thing that touches the Supabase client.
+
+## Real Feature-Specific Notes
+
+- **`features/attendance/`** — owns the geofence/proximity auto-checkout logic. `services/geofenceTask.ts` defines the `expo-task-manager` background task (`TaskManager.defineTask`) — this is registered **unconditionally at module load**, imported once as a side effect in `src/app/_layout.tsx`, per Expo's documented pattern: the OS can relaunch the app straight into this handler in the background with no screen mounted, so the registration can't live inside a component or hook. The task handler re-fetches the open attendance record from Supabase rather than trusting any cached state (it can fire long after the app's JS was last running), and calls `attendanceService.checkOut(..., 'auto_geofence')` directly — it has no UI to report to, so failures are swallowed rather than surfaced. `useAttendance` starts/stops the geofence (`geofenceTask.startGeofencing`/`stopGeofencing`) around check-in/out, and re-arms it on cold start if the employee is already checked in at a location with permission already granted. Every native call in this file is guarded for `Platform.OS !== 'web'` — background geofencing has no web equivalent, and must never crash there. Requires "Always" location permission (`locationService.requestBackgroundPermission`), asked for separately from the foreground one, only after check-in, with its own explainer — treat this as a second, more invasive permission ask, never bundle it with the foreground one.
+- **`features/tasks/`** and **`features/kpi/`** likely need to share data (KPI is derived from task completion) — resist the urge to have `kpi/` reach directly into `tasks/`'s internals; go through `tasks/`'s own service layer, same as any other consumer would.
+- **`features/staff/`** (admin's "browse other employees" concern) is where task *creation* actually happens in the UI (`StaffProfileScreen`, not a standalone form) — it consumes `tasks/`'s own `useCreateTask`/`useMyTasks` hooks and `TaskCard` component rather than reimplementing them, same cross-feature-via-service-layer rule as above. It also assigns an employee's `location_id` there, reusing `features/locations/`'s `useLocations` hook the same way.
+- **`features/locations/`** (admin CRUD on the `locations` table) reuses `features/attendance/`'s own `getCurrentCoordinates`/permission functions for its "Use my current location" button, rather than a second geolocation implementation — same cross-feature-via-service-layer rule, this time attendance being the one reused.
+- **CSV export** (`features/attendance/services/exportService.ts`) uses `expo-file-system/legacy`, not the bare `expo-file-system` import — this SDK version split the package into a new File/Directory-class API and a `/legacy` module carrying the older `writeAsStringAsync`/`cacheDirectory` functions. The plain import only exposes the new API; reaching for the old, more battle-tested function names silently 404s on the type, not a runtime crash, so it's worth knowing before adding another file-system consumer.
+- **`src/lib/groupByDay.ts`** groups any list of records with a `check_in_at` field into day sections — shared by every attendance list that groups by day (`MyAttendanceScreen`, `StaffAttendanceScreen`'s Recent history, `StaffProfileScreen`'s Shifts & Attendance). Sections carry both a `key` (the real `toDateOnly` calendar date — always unique) and a `title` (the display label, which omits the year unless it isn't the current one) as *separate* fields — use `key` for anything that needs real uniqueness (React list keys, matching a section back to a tapped record), `title` only for display. The two were the same string originally, which silently merged two same-day-different-year records into one section; keep them separate in any future code that touches this.
+- **`features/attendance/components/AttendanceHistoryRow.tsx`** is the one shared row for every attendance list (own history, cross-employee, the live "checked in" list) — a `showEmployee` prop switches between "own history" (times as the title) and "cross-employee" (name + avatar as the title, plus the date, since cross-employee views aren't guaranteed to sit under a date-grouped header) presentation; an optional `onRequestCheckOut` carries the admin-only close-out action. Add new attendance-row use cases here, not a new near-duplicate row.
+- **Before adding a migration for a new "admin can edit/delete X" feature, check whether the RLS policy already allows it.** Found twice on 2026-09-10 (employee profile editing, task editing/delete): `0001_initial_schema.sql`'s original policies were already broad enough (`employees_update_admin_only`, `tasks_update_assignee_or_admin`, `tasks_delete_admin_only`) — the missing piece was only a service function and UI, not a new migration. Don't assume new SQL is needed without actually reading the current policy first.
+
+## Theming
+
+`src/constants/theme.ts` defines a **complete** MD3 color scheme for both light and dark — every token (`surfaceVariant`, `outline`, the `*Container` colors), not just `primary`/`secondary`. Overriding only a couple of tokens on top of Paper's stock theme leaves the rest on Paper's default purple-seeded values, which is exactly what made early screens look like a mismatched pale-lavender tint bleeding into every input/chip/card border — a real, fixed bug (2026-09-04), not a hypothetical.
+
+Two theme systems exist side by side and must be kept in sync: **Paper's** (`PaperProvider`, colors individual components like `TextInput`/`Card`/`Chip` via context) and **React Navigation's** (`ThemeProvider` from `expo-router`, colors the screen container background/tab bar chrome — no longer the header, see below). They are genuinely separate — Paper's theme never paints the navigator's background. `src/app/_layout.tsx` derives a `navigationLightTheme`/`navigationDarkTheme` from the same `lightTheme`/`darkTheme` objects; if you change a background/surface/primary color in one, check the other still matches, or dark mode will show Paper components in dark colors sitting on a stale light background (found and fixed 2026-09-04 — screens stayed light while components went dark, i.e. unreadable light-on-light text).
+
+**Headers use `components/AppHeader.tsx` (Paper's `Appbar.Header`), not React Navigation's default header** (added 2026-09-04) — one theme for headers instead of two, and it gives real access to MD3's actual top-app-bar variants. `mode="large"` (152dp, MD3's real "Large Top App Bar") on tab-root screens (Check In, Staff, Attendance, Tasks, Leave, KPI); the default `mode="small"` plus `onBack` on drill-in screens (Profile, Locations, My Schedule) — matches MD3's own guidance on which variant belongs where, not an arbitrary choice. **A real gotcha found building this**: a custom React Navigation `header` render prop is *not* wrapped in a `SafeAreaView` the way the built-in header is, so nothing insets it from the status bar automatically. Paper's own `statusBarHeight` prop defaults to guessing a translucent/edge-to-edge status bar under Expo and pads for that guess — which is wrong for this app (status bar isn't translucent here), and produced doubled top padding. Setting it to `0` swung the other way (header icons overlapping the status bar). The actual fix: `useSafeAreaInsets().top` from `react-native-safe-area-context`, passed explicitly as `statusBarHeight` — the one value that's actually correct for a custom header, found by testing all three and looking at the real result each time, not guessed.
+
+Text inputs go through `components/AppTextInput.tsx` (defaults Paper's `TextInput` to `mode="outlined"`) rather than importing `TextInput` from `react-native-paper` directly — the default "flat" mode is the heavy-filled-background look that read as dated.
+
+**Typography**: `theme.ts` builds a full MD3 type scale via `configureFonts()` using **Inter** (`@expo-google-fonts/inter` — Regular/Medium/Bold), not Paper's system-font default. `src/app/_layout.tsx` loads it with `useFonts()` and holds the splash screen (`expo-splash-screen`) until it resolves — skipping this gate causes a visible flash of the OS fallback font before Inter swaps in. **Bold is reserved for display/headline only** (real page-level titles) — the first version of this scale used bold/semibold for titles and labels too, which made every screen look uniformly "loud" with no real hierarchy (found by actually looking at it running, 2026-09-04, fixed by dropping titles/labels/buttons to medium weight).
+
+**Color roles, not just a palette**: `primary` (coral) is reserved for real actions — contained buttons, the active nav tab. Buttons that just *display* data (a deadline, an assigned location, a date/time picker trigger) pass `textColor={theme.colors.onSurface}` to a `mode="outlined"` Button instead of leaving it on Paper's default (which is `primary` for every outlined/text button) — otherwise data-display buttons and real actions become visually indistinguishable. `statusColors.danger` (task priority "High", leave "Rejected") is deliberately a brick/brown red, not a brighter coral-adjacent one — an earlier version was close enough to `primary` that a priority flag and a real CTA read as the same color at a glance. `Avatar.Text` also doesn't use Paper's `primary` default (same reason) — pass `style={{ backgroundColor: theme.colors.secondaryContainer }}` explicitly, as `StaffListScreen`/`StaffAttendanceScreen` do.
+
+**The same "selected/active" color, everywhere it's used** (found 2026-09-10): Paper's `SegmentedButtons` and `Chip`'s `selected` state both default to MD3's real default, `secondaryContainer`/`onSecondaryContainer` (teal) — which this app deliberately reserves for avatar backgrounds specifically so they don't look like buttons (previous paragraph). Left on the default, every tab-switcher and filter chip in the app showed teal for "this one's selected" while the bottom nav and real buttons used coral for the same meaning. Fixed via `components/AppSegmentedButtons.tsx` and `components/AppFilterChip.tsx` — thin wrappers that pass a scoped `theme` prop remapping just those two tokens to `primaryContainer`/`onPrimaryContainer` (Paper deep-merges a passed `theme` prop with the ambient one, so fonts/roundness/every other color are untouched). **Use these instead of importing `SegmentedButtons`/`Chip`'s `selected` variant directly from `react-native-paper`** — a raw import reintroduces the teal mismatch.
+
+**A `List.Item` `left`/`right` gotcha, found 2026-09-10**: Paper's `List.Item` calls its `left`/`right` render prop with a `style` argument carrying the standard content gutter (`marginLeft: 16` for `left`, `marginLeft: 16` for `right`) — the item's own container has **zero** padding of its own on that side in this Paper version, so the gutter only exists if the render prop actually applies it. `List.Icon` does this internally; a custom component passed directly (`left={() => <AppAvatar .../>}`, ignoring the render prop's argument) does not, and renders flush against the edge with no inset at all. Any component used as a `List.Item` `left`/`right` slot needs to accept and forward a `style` prop (see `AppAvatar`) and every call site needs to actually pass `props.style` through (`left={(props) => <AppAvatar ... style={props.style} />}`) — confirmed by reading Paper's own `ListItem.js`/`utils.js`, not guessed.
+
+Cards use Paper's default **elevated** mode (soft shadow), not `mode="outlined"` (hard border) — matches the Airbnb-style soft-card look; don't add `mode="outlined"` back to a `<Card>` without a real reason.
+
+**Testing gotcha, found 2026-09-04**: after adding/changing fonts, a plain Fast Refresh can leave some already-mounted Text nodes with a *stale layout measurement* from before the font finished loading — the accessibility tree reports the correct full text, but the button visually renders truncated/ellipsized (`"Check out"` rendering as `"Check ..."`). This is a real, reproducible Yoga/Android quirk, not a data bug. A full cold process restart (force-stop, relaunch) always fixes it. Don't trust a Fast-Refreshed session to validate a font change — restart the app fully first.
+
+## Pagination
+
+Any list that grows unbounded over the life of the app should paginate rather than use a flat `.limit()` — a fixed cap either shows too little once real usage accumulates, or eventually re-fetches everything on every load. Two real instances now: the admin's attendance history (`useStaffAttendance`) and, since 2026-09-10, the employee's own attendance history (`useMyAttendanceHistory`, generic on `employeeId` so the admin's per-employee "Shifts & Attendance" tab gets it too) — the latter used to be a flat `.limit(60)`, found to be a real problem (~2 months of daily use) rather than fixed preemptively. The established pattern (`attendanceService.getRecentHistory`/`getHistoryForEmployee`): a service function taking `(offset, pageSize)` that fetches `pageSize + 1` rows via Supabase's `.range()`, trims the extra row, and returns `{ records, hasMore }` — this detects a next page without a separate `count` query. The hook tracks the accumulated list plus `hasMore`/`loadingMore` and exposes a `loadMore()`; the screen wires it to `FlatList`/`SectionList`'s `onEndReached`. Verify a new paginated list for real by temporarily lowering its page size against the actual (small) dev dataset so pagination genuinely has to page — at the real page size, a small dev dataset never exercises the second-page code path at all.
+
+A screen that needs *one specific record* (not a page of them) fetches it directly by id (`attendanceService.getAttendanceRecordById`, `useAttendanceRecord`) rather than scanning whatever page of a paginated hook happens to be loaded — `AttendanceDetailScreen` originally did the latter and would have silently 404'd for any record past the first page or two. Same reasoning for a screen that only needs a narrow, well-defined slice (`useDaysCheckedInThisMonth`'s explicitly month-scoped query for the Check-In screen's stat) rather than assuming a paginated hook's first page happens to be big enough to cover what's needed — it was, by coincidence, until pagination's page size changed.
+
+## Refetch on focus
+
+Every data-loading hook (13 of them as of 2026-09-10) uses `useRefetchOnFocus(load)` (`src/hooks/useRefetchOnFocus.ts`, wraps `useFocusEffect`) instead of a plain `useEffect(() => { load() }, [load])`. React Navigation keeps tab/stack screens mounted between switches rather than remounting them, so a mount-only effect never sees data that changed while the user was on a different tab or screen — this was a real, app-wide gap, not paranoia: an admin approving a request on the Leave tab and switching back to Attendance previously still showed stale state. New data-loading hooks should use this from the start, not a bare `useEffect`.
+
+**One real exception to know about**: a hook that holds *unsaved local draft state* until an explicit Save (`useMySchedule`'s `days`, toggled/edited before the employee hits Save) will have that draft silently discarded if the screen loses and regains focus mid-edit, since `useRefetchOnFocus` re-fetches and overwrites on every return visit. Before this hook existed, that draft persisted across a stray navigation by accident (the effect only ever ran once). Arguably more correct now (no stale-draft confusion) but worth knowing if a future draft-holding screen's behavior seems to "reset unexpectedly" — it's this, not a bug.
+
+## Dates: local calendar day, not UTC
+
+**Always use `src/lib/dateOnly.ts`'s `toDateOnly(date)` to turn a `Date` into a `YYYY-MM-DD` string for a `date` column** (`leave_requests.start_date`/`end_date`, any "today" comparison against one) — never `date.toISOString().slice(0, 10)`. `.toISOString()` reads the **UTC** calendar date, which is silently wrong for anyone in a timezone ahead of UTC during their early-morning local hours (in UTC+8, at 2am local — already "today" — `.toISOString()` still reports the previous UTC day). This was a real, found bug (2026-09-05): a leave request's start/end date could save as the wrong calendar day, an "on leave today" dashboard check could miss today entirely, and an Upcoming/Past split could misfile a request — caught by testing with real data spanning a day boundary, not by code inspection. Fixed once in `leaveService.ts`, `useAdminDashboard.ts`, `exportService.ts`, and `MyLeaveScreen.tsx`, all of which had independently reimplemented the same buggy one-liner.
+
+The one place `.toISOString()` *is* correct: comparing against a `timestamptz` column (e.g. `attendanceService.getTodayAttendance`'s `gte('check_in_at', ...)`), where the actual UTC instant is genuinely what matters, not a calendar-date string. Don't "fix" that call to use `toDateOnly` — it would break the comparison. The distinction: `date` columns want the local calendar day; `timestamptz` columns want the real instant.
+
+## Profile pictures
+
+`components/AppAvatar.tsx` is the one place that renders an employee's identity image — every screen showing a person (`StaffListScreen`, `StaffAttendanceScreen`, `StaffProfileScreen`, the employee's own Check-In greeting) uses it instead of a raw Paper `Avatar.Text`/`Avatar.Image`, so the initials-fallback behavior (null `avatarPath`, or a failed image load pointing at a deleted file) is handled in exactly one place. The upload flow itself (`features/auth/services/avatarService.ts`) lives in `auth/`, not `staff/`, since it's about the *signed-in user's own* profile — consistent with `auth/`'s stated scope elsewhere in this doc.
+
+**A real RLS gotcha worth remembering for any future "let a user self-edit one column" feature**: `0002_grants.sql` already grants blanket `UPDATE` (every column) on `employees` to the `authenticated` Postgres role — RLS row policies decide *which rows* that applies to, not which columns. So a permissive new "update your own row" policy, added without more thought, would let an employee change **any** column on their own row through that policy — including `role`. `supabase/0015_employee_avatar.sql` closes this with a `before update` trigger that rejects the write unless every column except `avatar_path` is unchanged (or the actor is an admin). Row policies alone cannot express "only this column" — a trigger (or column-level `GRANT`/`REVOKE`, which would also affect admins sharing the same Postgres role) is the correct tool.
+
+**A second real RLS gotcha, found the hard way while testing avatar re-uploads**: a fresh upload worked, but re-uploading (an `upsert` against an already-existing file) failed with "new row violates row-level security policy" even though the `INSERT`/`UPDATE` storage policies were provably correct — confirmed by querying `pg_policies` directly and by checking the object's `owner`/`owner_id` columns matched `auth.uid()` exactly. The actual cause: Supabase Storage's "upsert" runs as `INSERT ... ON CONFLICT DO UPDATE`, and **Postgres's RLS explicitly requires the conflicting row to be visible via a `SELECT` policy before the `UPDATE` policy is even evaluated** — this table had no `SELECT` policy at all (`supabase/0017`). Marking a bucket "public" in Supabase only makes the Storage API's file-*serving* endpoint skip auth for downloads; it does **not** create a database-level `SELECT` policy on `storage.objects` itself — those are two unrelated mechanisms that happen to both be about "read access." Any table that supports upsert-style writes needs an actual `SELECT` policy, independent of whatever read-side public/private behavior it also has.
+
+## Maintenance Guidelines
+
+- New screen → route in `app/`, screen component in the right `features/<name>/screens/`, one-line export wiring them together.
+- New API call → a function in that feature's `services/` file. Never inline a Supabase call in a component.
+- New reusable UI element → if used in 3+ features, `components/`; if feature-specific, stays inside that feature's own `components/`.
+- Wrapping a Paper component to fix/standardize its default behavior app-wide → the `App*` naming convention (`AppHeader`, `AppTextInput`, `AppAvatar`, `AppTabBarIcon`, `AppSegmentedButtons`, `AppFilterChip`) — import the wrapper everywhere that component is used, not the raw Paper one, or the fix only applies where someone remembered to opt in.
+
+## Distribution
+
+No Google Play / App Store listing planned — this is an internal tool, not a public release.
+
+- **Android**: `eas build --profile preview` (with `"distribution": "internal"` in `eas.json`) produces an installable APK, and Expo's own dashboard hands back a shareable link *and* a QR code automatically — no custom website is needed just to get link/QR install working. Staff scan the QR, download, and allow "install unknown apps" once. A branded landing page could wrap that link later, but it's a nice-to-have, not a requirement.
+- **iOS**: no raw-sideload equivalent exists — Apple doesn't allow it. The real options are TestFlight (needs a paid Apple Developer account, $99/yr, goes through a light Apple review) or ad-hoc distribution with every tester device's UDID pre-registered (doesn't scale past a handful of people). Don't promise iOS staff the same one-tap install Android gets.
+- **`eas.json` added (2026-09-10)** — `preview` profile (`"distribution": "internal"`, Android APK) is what the QR/link on the download page below points at; `development` profile is the existing dev-client build already referenced in `README.md`. Still needs a real `eas build --profile preview --platform android` run (requires logging into an Expo account, not done yet in this environment) before the link is real.
+- **Download page**: a separate sibling project, `../attendance-download` — a plain static HTML/CSS/JS page (no framework, no build step) with the Android QR/link and an iOS section (TestFlight, pending a paid Apple Developer account). Deliberately a sibling, not a folder inside this repo — it's a distinct deployable (static site, different host) from the Expo app itself, same reasoning `crm`/`attendance-app` are siblings rather than nested. See that project's own `README.md`.
+
+See `TODO.md` for live progress and pending work — this file describes the pattern, not the current state.
