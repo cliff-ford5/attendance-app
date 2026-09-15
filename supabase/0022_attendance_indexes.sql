@@ -1,0 +1,16 @@
+-- Every attendance list query (admin's Recent History, an employee's own
+-- history, the CSV export) sorts by check_in_at, and Recent History now
+-- also filters on is_late/left_early/day_type/check_out_type — none of
+-- which had any index before this (checked the schema directly: the only
+-- existing index, 0001's attendance_employee_open_idx, is a narrow partial
+-- index just for finding an employee's currently-open record). Invisible
+-- at today's data volume, but ORDER BY + .range() pagination degrades to a
+-- full sequential scan as this table grows into the tens of thousands of
+-- rows a real multi-year deployment will reach.
+--
+-- Just the ordering column for now, not the filter columns too — no real
+-- evidence yet that those need their own indexes at this app's actual
+-- scale, and speculatively indexing every column a query might someday
+-- filter on is its own cost (slower writes, more storage). Revisit if a
+-- filtered query is actually observed to be slow.
+create index attendance_check_in_at_idx on attendance (check_in_at desc);

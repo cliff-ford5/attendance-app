@@ -12,10 +12,10 @@ type Props = {
 
 export function DashboardStatCard({ label, value, icon, color, onPress }: Props) {
   return (
-    <Card style={styles.card} onPress={onPress}>
+    <Card mode="contained" style={[styles.card, { backgroundColor: `${color}17` }]} onPress={onPress}>
       <Card.Content style={styles.content}>
-        <View style={[styles.iconWrap, { backgroundColor: `${color}22` }]}>
-          <MaterialCommunityIcons name={icon} size={18} color={color} />
+        <View style={[styles.iconWrap, { backgroundColor: color }]}>
+          <MaterialCommunityIcons name={icon} size={18} color="#FFFFFF" />
         </View>
         <Text variant="displaySmall">{value}</Text>
         <Text variant="bodySmall" style={styles.label} numberOfLines={2}>

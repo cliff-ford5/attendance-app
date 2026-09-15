@@ -5,6 +5,7 @@ import { useAuth } from './useAuth';
 export function useAvatarUpload() {
   const { profile, refreshProfile } = useAuth();
   const [uploading, setUploading] = useState(false);
+  const [removing, setRemoving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   async function pickAndUpload() {
@@ -21,5 +22,19 @@ export function useAvatarUpload() {
     }
   }
 
-  return { uploading, error, pickAndUpload };
+  async function removeAvatar() {
+    if (!profile?.id || !profile.avatar_path) return;
+    setRemoving(true);
+    setError(null);
+    try {
+      await avatarService.removeAvatar(profile.id, profile.avatar_path);
+      await refreshProfile();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not remove your profile picture.');
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  return { uploading, removing, error, pickAndUpload, removeAvatar };
 }

@@ -1,14 +1,16 @@
+import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button, Card, Chip, HelperText, Icon, Text, useTheme } from 'react-native-paper';
+import { Button, Card, Chip, Dialog, Icon, Portal, Text, useTheme } from 'react-native-paper';
 import { AppAvatar } from '@/components/AppAvatar';
 import { AppSegmentedButtons } from '@/components/AppSegmentedButtons';
 import { ErrorState, LoadingState, NotConfiguredState } from '@/components/ScreenState';
+import { SignOutDialog } from '@/components/SignOutDialog';
 import { isSupabaseConfigured } from '@/services/supabase';
 import { statusColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/hooks/useAuth';
-import { useAvatarUpload } from '@/features/auth/hooks/useAvatarUpload';
+import { useTodaysHoliday } from '@/features/holidays/hooks/useTodaysHoliday';
 import type { DayType } from '@/types/database';
 import { AttendanceStatCard } from '../components/AttendanceStatCard';
 import { SwipeToConfirm } from '../components/SwipeToConfirm';
@@ -32,6 +34,7 @@ function isSameDate(a: Date, b: Date): boolean {
 
 export function CheckInScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { profile, signOut } = useAuth();
   const {
@@ -40,6 +43,7 @@ export function CheckInScreen() {
     error,
     busy,
     permission,
+    canAskAgain,
     grantPermission,
     backgroundPermission,
     hasLocation,
@@ -47,10 +51,11 @@ export function CheckInScreen() {
     checkIn,
     checkOut,
     reload,
-  } = useAttendance(profile?.id, profile?.location_id);
-  const { uploading: uploadingAvatar, error: avatarError, pickAndUpload } = useAvatarUpload();
+  } = useAttendance(profile?.id, profile?.location_id, profile?.is_roaming);
   const daysThisMonth = useDaysCheckedInThisMonth(profile?.id);
+  const todaysHoliday = useTodaysHoliday();
   const [dayType, setDayType] = useState<DayType>('full');
+  const [signOutConfirmVisible, setSignOutConfirmVisible] = useState(false);
 
   const today = useMemo(() => new Date(), []);
   const week = useMemo(() => {
@@ -67,6 +72,9 @@ export function CheckInScreen() {
   if (error) return <ErrorState message={error} onRetry={reload} />;
 
   const isCheckedIn = Boolean(openRecord);
+  const checkInBlockedByHoliday = Boolean(todaysHoliday?.blocks_check_in) && !isCheckedIn;
+  const checkInBlockedByInactive = profile?.active === false && !isCheckedIn;
+  const checkInBlocked = checkInBlockedByHoliday || checkInBlockedByInactive;
 
   return (
     <ScrollView
@@ -74,25 +82,38 @@ export function CheckInScreen() {
       contentContainerStyle={[styles.container, { paddingTop: insets.top + 16 }]}
     >
       <View style={styles.headerRow}>
-        <Pressable onPress={pickAndUpload} disabled={uploadingAvatar} accessibilityLabel="Change your profile picture">
-          <AppAvatar name={profile?.name} avatarPath={profile?.avatar_path} size={52} />
-          <View style={[styles.editBadge, { backgroundColor: theme.colors.primary }]}>
-            <Icon source="pencil" size={11} color="#FFFFFF" />
+        <Pressable
+          style={styles.identityRow}
+          onPress={() => router.push('/(employee)/profile')}
+          accessibilityLabel="View your profile"
+        >
+          <View>
+            <AppAvatar name={profile?.name} avatarPath={profile?.avatar_path} size={52} />
+            <View style={[styles.editBadge, { backgroundColor: theme.colors.primary }]}>
+              <Icon source="pencil" size={11} color="#FFFFFF" />
+            </View>
+          </View>
+          <View style={styles.headerText}>
+            <Text variant="titleMedium" numberOfLines={1}>
+              {profile?.name ?? 'there'}
+            </Text>
+            <Text variant="bodySmall" style={styles.subtleText} numberOfLines={1}>
+              {profile?.position || 'Employee'}
+            </Text>
           </View>
         </Pressable>
-        <View style={styles.headerText}>
-          <Text variant="titleMedium" numberOfLines={1}>
-            {profile?.name ?? 'there'}
-          </Text>
-          <Text variant="bodySmall" style={styles.subtleText} numberOfLines={1}>
-            {profile?.position || 'Employee'}
-          </Text>
-        </View>
-        <Pressable onPress={() => signOut()} accessibilityLabel="Sign out" hitSlop={8}>
+        <Pressable onPress={() => setSignOutConfirmVisible(true)} accessibilityLabel="Sign out" hitSlop={8}>
           <Icon source="logout" size={22} color={theme.colors.onSurfaceVariant} />
         </Pressable>
       </View>
-      {avatarError && <HelperText type="error">{avatarError}</HelperText>}
+      <SignOutDialog
+        visible={signOutConfirmVisible}
+        onDismiss={() => setSignOutConfirmVisible(false)}
+        onConfirm={() => {
+          setSignOutConfirmVisible(false);
+          signOut();
+        }}
+      />
 
       <View style={styles.weekRow}>
         {week.map((date, i) => {
@@ -112,6 +133,33 @@ export function CheckInScreen() {
           );
         })}
       </View>
+
+      {checkInBlockedByInactive && (
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text variant="titleMedium" style={styles.subtleText}>
+              Account inactive
+            </Text>
+            <Text variant="bodyMedium" style={styles.explainerText}>
+              You've been marked inactive, so you can't check in. Contact an admin if this seems wrong.
+            </Text>
+          </Card.Content>
+        </Card>
+      )}
+
+      {todaysHoliday && (
+        <Card style={styles.card}>
+          <Card.Content>
+            <Text variant="titleMedium" style={styles.subtleText}>
+              Today is a holiday
+            </Text>
+            <Text variant="bodyMedium" style={styles.explainerText}>
+              {todaysHoliday.name}
+              {todaysHoliday.blocks_check_in ? ' — check-in is disabled today.' : ' — you can still check in as normal.'}
+            </Text>
+          </Card.Content>
+        </Card>
+      )}
 
       <Text variant="titleMedium" style={styles.sectionTitle}>
         Today Attendance
@@ -144,22 +192,30 @@ export function CheckInScreen() {
         />
       </View>
 
-      {permission === 'explaining' && (
-        <Card style={styles.card}>
-          <Card.Content>
-            <Text variant="titleMedium" style={styles.subtleText}>
-              Confirm your location
+      {/* Blocking, not just an inline card — an employee can't check in at
+          all without location access, since the whole point of check-in is
+          confirming they're at their assigned work location. Only gates
+          checking IN: someone already checked in (or whose permission got
+          revoked mid-shift) can still check out freely, same as
+          useAttendance's own performCheckOut having no permission gate. */}
+      <Portal>
+        <Dialog visible={!isCheckedIn && permission !== 'granted'} dismissable={false}>
+          <Dialog.Icon icon="map-marker-outline" />
+          <Dialog.Title style={styles.centerText}>Location access needed</Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium" style={[styles.explainerText, styles.centerText]}>
+              This app needs your location to check you in — it confirms you're actually at your
+              assigned work location, and lets it automatically check you out if you leave. You won't
+              be able to check in until you allow it.
             </Text>
-            <Text variant="bodyMedium" style={styles.explainerText}>
-              We use your location when you check in or out, to confirm you're at your assigned work
-              location.
-            </Text>
-            <Button mode="text" onPress={grantPermission} style={styles.explainerButton}>
-              Allow location access
+          </Dialog.Content>
+          <Dialog.Actions>
+            <Button mode="contained" onPress={canAskAgain ? grantPermission : () => Linking.openSettings()}>
+              {canAskAgain ? 'Allow location access' : 'Open Settings'}
             </Button>
-          </Card.Content>
-        </Card>
-      )}
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
 
       {isCheckedIn && hasLocation && backgroundPermission === 'explaining' && (
         <Card style={styles.card}>
@@ -201,6 +257,12 @@ export function CheckInScreen() {
         </Text>
       )}
 
+      {isCheckedIn && profile?.is_roaming && (
+        <Text variant="bodySmall" style={styles.autoCheckoutNote}>
+          You won't be auto-checked-out for leaving your assigned location
+        </Text>
+      )}
+
       {isCheckedIn && openRecord?.day_type === 'half' && (
         <View style={styles.chipRow}>
           <Chip compact icon="clock-time-four-outline">
@@ -209,7 +271,7 @@ export function CheckInScreen() {
         </View>
       )}
 
-      {!isCheckedIn && (
+      {!isCheckedIn && !checkInBlocked && (
         <AppSegmentedButtons
           value={dayType}
           onValueChange={(v) => setDayType(v as DayType)}
@@ -224,10 +286,18 @@ export function CheckInScreen() {
       <View style={styles.swipeWrap}>
         <SwipeToConfirm
           key={isCheckedIn ? 'checked-in' : 'checked-out'}
-          label={isCheckedIn ? 'Swipe to Check Out' : 'Swipe to Check In'}
+          label={
+            isCheckedIn
+              ? 'Swipe to Check Out'
+              : checkInBlockedByInactive
+                ? 'Check-in disabled — Inactive'
+                : checkInBlockedByHoliday
+                  ? 'Check-in disabled — Holiday'
+                  : 'Swipe to Check In'
+          }
           icon={isCheckedIn ? 'logout' : 'arrow-right'}
           color={isCheckedIn ? statusColors.danger : theme.colors.primary}
-          disabled={busy}
+          disabled={busy || (!isCheckedIn && permission !== 'granted') || checkInBlocked}
           onConfirm={isCheckedIn ? checkOut : () => checkIn(dayType)}
         />
       </View>
@@ -242,6 +312,12 @@ const styles = StyleSheet.create({
     gap: 16,
   },
   headerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  identityRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
@@ -313,6 +389,9 @@ const styles = StyleSheet.create({
   explainerText: {
     marginTop: 8,
     opacity: 0.8,
+  },
+  centerText: {
+    textAlign: 'center',
   },
   explainerButton: {
     marginTop: 12,

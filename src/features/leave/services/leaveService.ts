@@ -1,3 +1,5 @@
+import * as ImagePicker from 'expo-image-picker';
+import { getCurrentCoordinates, requestForegroundPermission, reverseGeocode } from '@/features/attendance/services/locationService';
 import { toDateOnly } from '@/lib/dateOnly';
 import { supabase } from '@/services/supabase';
 import type { LeaveRequest, LeaveStatus } from '@/types/database';
@@ -62,6 +64,10 @@ export async function createLeaveRequest(employeeId: string, input: NewLeaveRequ
       start_date: toDateOnly(input.startDate),
       end_date: toDateOnly(input.endDate),
       reason: input.reason || null,
+      attachment_path: input.attachmentPath ?? null,
+      location_lat: input.locationLat ?? null,
+      location_lng: input.locationLng ?? null,
+      location_address: input.locationAddress ?? null,
     })
     .select('*')
     .single();
@@ -69,8 +75,59 @@ export async function createLeaveRequest(employeeId: string, input: NewLeaveRequ
   return data as LeaveRequest;
 }
 
-// Employee withdrawing their own request — the only transition RLS lets a
-// non-admin make (see supabase/0007_leave_requests.sql).
+// Picks a photo and uploads it immediately (same "upload on pick, not on
+// submit" call as avatarService.pickAndUploadAvatar) — a unique path per
+// upload (not a fixed per-employee filename like avatars), since one
+// employee can attach different evidence to different requests over time.
+// Returns the storage path, or null if the user cancelled picking.
+export async function pickAndUploadLeaveAttachment(employeeId: string): Promise<string | null> {
+  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+  if (permission.status !== 'granted') {
+    throw new Error('Photo library access is needed to attach a photo.');
+  }
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ['images'],
+    quality: 0.7,
+  });
+  if (result.canceled || !result.assets[0]) return null;
+
+  const asset = result.assets[0];
+  const extension = asset.mimeType === 'image/png' ? 'png' : 'jpg';
+  const path = `${employeeId}/${Date.now()}.${extension}`;
+
+  const response = await fetch(asset.uri);
+  const arrayBuffer = await response.arrayBuffer();
+
+  const { error } = await supabase.storage
+    .from('leave-attachments')
+    .upload(path, arrayBuffer, { contentType: asset.mimeType ?? 'image/jpeg' });
+  if (error) throw error;
+
+  return path;
+}
+
+// `leave-attachments` is a private bucket (unlike `avatars`) — viewing an
+// attachment needs a short-lived signed URL, not a permanent public one.
+export async function getLeaveAttachmentSignedUrl(path: string): Promise<string | null> {
+  const { data, error } = await supabase.storage.from('leave-attachments').createSignedUrl(path, 3600);
+  if (error) return null;
+  return data?.signedUrl ?? null;
+}
+
+// Reuses the same on-device geolocation + reverse-geocoding this app
+// already relies on for check-in/out — no new permission flow, just the
+// existing foreground one.
+export async function getCurrentLeaveLocation(): Promise<{ lat: number; lng: number; address: string | null } | null> {
+  const { status } = await requestForegroundPermission();
+  if (status !== 'granted') return null;
+  const coords = await getCurrentCoordinates();
+  if (!coords) return null;
+  const address = await reverseGeocode(coords);
+  return { lat: coords.latitude, lng: coords.longitude, address };
+}
+
+// Employee withdrawing their own request.
 export async function cancelLeaveRequest(id: string): Promise<LeaveRequest> {
   const { data, error } = await supabase
     .from('leave_requests')
@@ -80,6 +137,39 @@ export async function cancelLeaveRequest(id: string): Promise<LeaveRequest> {
     .single();
   if (error) throw error;
   return data as LeaveRequest;
+}
+
+// Employee editing their own still-pending request's details, instead of
+// cancel + resubmit as two separate requests. RLS (`leave_update_own_or_admin`,
+// 0027) only allows this while the row is currently 'pending'. Reuses
+// NewLeaveRequestInput — same fields, just an update instead of an insert.
+export async function updateLeaveRequest(id: string, input: NewLeaveRequestInput): Promise<LeaveRequest> {
+  const { data, error } = await supabase
+    .from('leave_requests')
+    .update({
+      leave_type: input.leaveType,
+      start_date: toDateOnly(input.startDate),
+      end_date: toDateOnly(input.endDate),
+      reason: input.reason || null,
+      attachment_path: input.attachmentPath ?? null,
+      location_lat: input.locationLat ?? null,
+      location_lng: input.locationLng ?? null,
+      location_address: input.locationAddress ?? null,
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as LeaveRequest;
+}
+
+// Hard delete — distinct from cancel (a status change). RLS
+// (`leave_delete_own_pending_or_cancelled_or_admin`, 0027) scopes an
+// employee to their own pending/cancelled requests; a decided
+// (approved/rejected) request stays as a record unless an admin removes it.
+export async function deleteLeaveRequest(id: string): Promise<void> {
+  const { error } = await supabase.from('leave_requests').delete().eq('id', id);
+  if (error) throw error;
 }
 
 export async function reviewLeaveRequest(

@@ -8,6 +8,7 @@ export function useLocations() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -43,5 +44,23 @@ export function useLocations() {
     }
   }
 
-  return { locations, loading, error, saving, save, reload: load };
+  async function remove(id: string) {
+    setDeletingId(id);
+    setError(null);
+    try {
+      await locationsService.deleteLocation(id);
+      setLocations((prev) => prev.filter((l) => l.id !== id));
+      return true;
+    } catch {
+      // The realistic failure here is the FK on employees.location_id
+      // rejecting the delete because someone's still assigned here — a
+      // clearer, actionable message beats surfacing the raw Postgres text.
+      setError('Could not delete this location — make sure no employees are still assigned to it first.');
+      return false;
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
+  return { locations, loading, error, saving, deletingId, save, remove, reload: load };
 }

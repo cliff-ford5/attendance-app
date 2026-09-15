@@ -4,7 +4,6 @@ import { isSupabaseConfigured } from '@/services/supabase';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { TaskCard } from '../components/TaskCard';
 import { useMyTasks } from '../hooks/useMyTasks';
-import type { TaskStatus } from '../types';
 
 export function MyTasksScreen() {
   const { profile } = useAuth();
@@ -15,10 +14,6 @@ export function MyTasksScreen() {
   if (error) return <ErrorState message={error} onRetry={reload} />;
   if (tasks.length === 0) return <EmptyState message="No tasks assigned to you yet." />;
 
-  function nextStatus(current: TaskStatus): TaskStatus {
-    return current === 'assigned' ? 'in_progress' : 'done';
-  }
-
   return (
     <FlatList
       data={tasks}
@@ -26,11 +21,7 @@ export function MyTasksScreen() {
       refreshControl={<RefreshControl refreshing={false} onRefresh={reload} />}
       contentContainerStyle={{ paddingVertical: 8 }}
       renderItem={({ item }) => (
-        <TaskCard
-          task={item}
-          busy={updatingId === item.id}
-          onAdvance={item.status === 'done' ? undefined : () => setStatus(item.id, nextStatus(item.status))}
-        />
+        <TaskCard task={item} busy={updatingId === item.id} onStatusChange={(status) => setStatus(item.id, status)} />
       )}
     />
   );

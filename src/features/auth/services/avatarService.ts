@@ -38,3 +38,16 @@ export async function pickAndUploadAvatar(employeeId: string): Promise<string | 
 
   return path;
 }
+
+// Storage already grants the account owner delete on their own folder
+// (`avatar_delete_own`, 0015) — the trigger only ever restricted which
+// *columns* the employees table update could touch, not what value
+// avatar_path is allowed to take, so setting it back to null needs no new
+// migration either.
+export async function removeAvatar(employeeId: string, avatarPath: string): Promise<void> {
+  const { error: removeError } = await supabase.storage.from('avatars').remove([avatarPath]);
+  if (removeError) throw removeError;
+
+  const { error: updateError } = await supabase.from('employees').update({ avatar_path: null }).eq('id', employeeId);
+  if (updateError) throw updateError;
+}

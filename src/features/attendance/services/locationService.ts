@@ -2,14 +2,18 @@ import * as Location from 'expo-location';
 import { Linking, Platform } from 'react-native';
 import type { Coordinates } from '../types';
 
+// `canAskAgain` matters for the blocking permission gate on CheckInScreen —
+// once the OS has hard-denied a permission, requesting it again silently
+// no-ops instead of showing its dialog, so the UI needs to know to point
+// the employee at system settings instead of retrying the same button.
 export async function getForegroundPermissionStatus() {
-  const { status } = await Location.getForegroundPermissionsAsync();
-  return status;
+  const { status, canAskAgain } = await Location.getForegroundPermissionsAsync();
+  return { status, canAskAgain };
 }
 
 export async function requestForegroundPermission() {
-  const { status } = await Location.requestForegroundPermissionsAsync();
-  return status;
+  const { status, canAskAgain } = await Location.requestForegroundPermissionsAsync();
+  return { status, canAskAgain };
 }
 
 // "Always" permission — needed only for geofence auto-checkout (Phase 2),

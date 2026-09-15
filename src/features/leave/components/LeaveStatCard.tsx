@@ -1,13 +1,13 @@
 import { StyleSheet } from 'react-native';
 import { Card, Text } from 'react-native-paper';
 
-// Bordered/outlined rather than filled — these are informational counts,
-// not actions, so they stay off `primary` (reserved for real actions
-// elsewhere in the app) and instead borrow the same status colors already
-// used for a request's status chip, just applied as an outline here.
+// A soft tinted fill instead of a white card with just a colored outline —
+// these are informational counts, not actions, so still off `primary`
+// (reserved for real actions elsewhere), but a filled wash reads livelier
+// than an outline while staying calm enough not to compete with real CTAs.
 export function LeaveStatCard({ label, value, color }: { label: string; value: number | string; color: string }) {
   return (
-    <Card style={[styles.card, { borderColor: color }]} mode="outlined">
+    <Card mode="contained" style={[styles.card, { backgroundColor: `${color}17` }]}>
       <Card.Content>
         <Text variant="headlineSmall" style={{ color }}>
           {value}
@@ -24,7 +24,6 @@ const styles = StyleSheet.create({
   card: {
     flexBasis: '48%',
     flexGrow: 1,
-    borderWidth: 1.5,
   },
   label: {
     marginTop: 4,

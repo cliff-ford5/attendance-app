@@ -1,6 +1,6 @@
 import { Link } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 import { Button, HelperText, Text } from 'react-native-paper';
 import { AppTextInput as TextInput } from '@/components/AppTextInput';
 import { NotConfiguredState } from '@/components/ScreenState';
@@ -34,6 +34,7 @@ export function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.container}>
+        <Image source={require('@/assets/images/uc-logo-mark.png')} style={styles.logo} resizeMode="contain" />
         <Text variant="headlineMedium" style={styles.title}>
           Attendance
         </Text>
@@ -79,6 +80,12 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 24,
     gap: 4,
+  },
+  logo: {
+    width: 72,
+    height: 72,
+    alignSelf: 'center',
+    marginBottom: 16,
   },
   title: {
     marginBottom: 4,

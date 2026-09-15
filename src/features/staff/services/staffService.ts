@@ -27,6 +27,28 @@ export async function updateEmployeeLocation(employeeId: string, locationId: str
   return data as Employee;
 }
 
+export async function updateEmployeeRoaming(employeeId: string, isRoaming: boolean): Promise<Employee> {
+  const { data, error } = await supabase
+    .from('employees')
+    .update({ is_roaming: isRoaming })
+    .eq('id', employeeId)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as Employee;
+}
+
+// `active` already existed on the schema and was shown as a read-only
+// "Inactive" chip, but nothing ever set it — a departed employee stayed
+// active forever. Deactivating also blocks check-in at the RLS level
+// (`attendance_insert_own`, 0026), not just here — this is the toggle for
+// that, not the enforcement.
+export async function updateEmployeeActive(employeeId: string, active: boolean): Promise<Employee> {
+  const { data, error } = await supabase.from('employees').update({ active }).eq('id', employeeId).select('*').single();
+  if (error) throw error;
+  return data as Employee;
+}
+
 export type EmployeeProfileInput = {
   name: string;
   position: string;

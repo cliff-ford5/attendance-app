@@ -76,7 +76,13 @@ export const lightTheme = {
     onError: '#FFFFFF',
     errorContainer: '#FFDAD6',
     onErrorContainer: '#410002',
-    background: '#FFFFFF',
+    // Warm near-white, not pure white — this app's own Visual Design intent
+    // (CLAUDE.md) always called for this, but the actual value here was
+    // stark #FFFFFF until 2026-09-11, found while looking for why the app
+    // read as bland. `surface` (cards) stays pure white on purpose — cards
+    // read as sitting slightly "above" the warm canvas, the same soft-depth
+    // effect their shadow already gives them, just reinforced by color too.
+    background: '#FFFDF9',
     onBackground: '#222222',
     surface: '#FFFFFF',
     onSurface: '#222222',
@@ -90,6 +96,20 @@ export const lightTheme = {
       level2: '#F5F5F5',
     },
   },
+};
+
+// A soft, diluted coral wash for AppHeader's bigger tab-root variant
+// (`mode="medium"`) — not `primaryContainer` directly, which is already a
+// UI-established "small chip/pill" color (SegmentedButtons/Chip selected
+// state); the same hex value covering a full header reads far more
+// saturated than it does on a small chip, purely from covering more area,
+// so this is deliberately lighter than primaryContainer, not the same
+// swatch reused. `mode="small"` (drill-in) headers stay on the plain warm
+// `background` tone instead, so tab-root screens read as more "arrived,
+// here's your dashboard" and drill-ins stay quieter.
+export const headerTint = {
+  light: '#FFF1F3',
+  dark: '#241417',
 };
 
 export const darkTheme = {

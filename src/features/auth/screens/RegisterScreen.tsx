@@ -1,6 +1,6 @@
 import { Link } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 import { Button, HelperText, Icon, Text } from 'react-native-paper';
 import { AppTextInput as TextInput } from '@/components/AppTextInput';
 import { NotConfiguredState } from '@/components/ScreenState';
@@ -54,6 +54,7 @@ export function RegisterScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
       <View style={styles.container}>
+        <Image source={require('@/assets/images/uc-logo-mark.png')} style={styles.logo} resizeMode="contain" />
         <Text variant="headlineMedium" style={styles.title}>
           Create your account
         </Text>
@@ -110,6 +111,12 @@ const styles = StyleSheet.create({
   },
   centerText: {
     textAlign: 'center',
+  },
+  logo: {
+    width: 72,
+    height: 72,
+    alignSelf: 'center',
+    marginBottom: 16,
   },
   title: {
     marginBottom: 4,

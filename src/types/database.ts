@@ -26,6 +26,14 @@ export type Location = {
   expected_end: string;
 };
 
+export type Holiday = {
+  id: string;
+  name: string;
+  date: string;
+  blocks_check_in: boolean;
+  created_at: string;
+};
+
 export type Employee = {
   id: string;
   name: string;
@@ -39,6 +47,11 @@ export type Employee = {
   mobile_number: string | null;
   annual_leave_days: number;
   avatar_path: string | null;
+  // Skips arming Phase 2's background auto-checkout geofence for this
+  // employee — for staff who legitimately work across multiple locations,
+  // so leaving their *assigned* location's radius doesn't auto-check them
+  // out. Doesn't affect check-in itself, which was never location-gated.
+  is_roaming: boolean;
   created_at: string;
 };
 
@@ -76,6 +89,10 @@ export type LeaveRequest = {
   reviewed_by: string | null;
   reviewed_at: string | null;
   created_at: string;
+  attachment_path: string | null;
+  location_lat: number | null;
+  location_lng: number | null;
+  location_address: string | null;
 };
 
 export type WeeklyScheduleEntry = {

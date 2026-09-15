@@ -1,8 +1,7 @@
-import DateTimePicker from '@react-native-community/datetimepicker';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useState } from 'react';
-import { FlatList, Platform, ScrollView, SectionList, StyleSheet, View } from 'react-native';
-import { Card, Chip, Dialog, HelperText, IconButton, List, Menu, Portal, Text, useTheme, Button as PaperButton } from 'react-native-paper';
+import { FlatList, ScrollView, SectionList, StyleSheet, View } from 'react-native';
+import { Chip, Card, Dialog, FAB, HelperText, IconButton, List, Menu, Portal, Switch, Text, useTheme, Button as PaperButton } from 'react-native-paper';
 import { AppAvatar } from '@/components/AppAvatar';
 import { AppHeader } from '@/components/AppHeader';
 import { AppSegmentedButtons } from '@/components/AppSegmentedButtons';
@@ -10,45 +9,38 @@ import { AppTextInput as TextInput } from '@/components/AppTextInput';
 import { ErrorState, LoadingState, NotConfiguredState } from '@/components/ScreenState';
 import { isSupabaseConfigured } from '@/services/supabase';
 import { AttendanceHistoryRow } from '@/features/attendance/components/AttendanceHistoryRow';
-import { useAuth } from '@/features/auth/hooks/useAuth';
 import { useMyAttendanceHistory } from '@/features/attendance/hooks/useMyAttendanceHistory';
 import { useLocations } from '@/features/locations/hooks/useLocations';
 import { DAY_LABELS, SCHEDULE_DAY_ORDER } from '@/features/schedule/constants';
 import { useMySchedule } from '@/features/schedule/hooks/useMySchedule';
 import { TaskCard } from '@/features/tasks/components/TaskCard';
-import { useCreateTask } from '@/features/tasks/hooks/useCreateTask';
 import { useMyTasks } from '@/features/tasks/hooks/useMyTasks';
-import type { Task, TaskPriority } from '@/features/tasks/types';
-import { openAndroidDateTimePicker } from '@/lib/androidDateTimePicker';
+import type { Task } from '@/features/tasks/types';
 import { groupByDay } from '@/lib/groupByDay';
 import { useEmployeeProfile } from '../hooks/useEmployeeProfile';
 
 type ProfileTab = 'profile' | 'tasks' | 'shifts';
 
-function defaultDeadline() {
-  const d = new Date();
-  d.setDate(d.getDate() + 1);
-  return d;
-}
-
 export function StaffProfileScreen() {
   const theme = useTheme();
   const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { profile: currentAdmin } = useAuth();
-  const { employee, loading, error, saveError, savingLocation, setLocation, savingProfile, updateProfile, reload } =
-    useEmployeeProfile(id);
   const {
-    tasks,
-    loading: loadingTasks,
-    error: tasksError,
-    updatingId,
-    deletingId,
-    setStatus,
-    edit: editTask,
-    remove: removeTask,
-    reload: reloadTasks,
-  } = useMyTasks(id);
+    employee,
+    loading,
+    error,
+    saveError,
+    savingLocation,
+    setLocation,
+    savingRoaming,
+    setRoaming,
+    savingActive,
+    setActive,
+    savingProfile,
+    updateProfile,
+    reload,
+  } = useEmployeeProfile(id);
+  const { tasks, loading: loadingTasks, updatingId, deletingId, setStatus, remove: removeTask } = useMyTasks(id);
   const {
     records: attendanceRecords,
     loading: loadingAttendance,
@@ -57,17 +49,10 @@ export function StaffProfileScreen() {
     loadMore: loadMoreAttendance,
   } = useMyAttendanceHistory(id);
   const { days: scheduleDays, hasSavedSchedule, loading: loadingSchedule } = useMySchedule(id);
-  const { create, submitting, error: createError } = useCreateTask(currentAdmin?.id);
   const { locations, loading: loadingLocations } = useLocations();
 
   const [tab, setTab] = useState<ProfileTab>('profile');
-  const [title, setTitle] = useState('');
-  const [description, setDescription] = useState('');
-  const [priority, setPriority] = useState<TaskPriority>('medium');
-  const [deadline, setDeadline] = useState(defaultDeadline());
-  const [pickerVisible, setPickerVisible] = useState(false);
   const [locationMenuVisible, setLocationMenuVisible] = useState(false);
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [pendingDeleteTask, setPendingDeleteTask] = useState<Task | null>(null);
 
   const [editingProfile, setEditingProfile] = useState(false);
@@ -103,36 +88,6 @@ export function StaffProfileScreen() {
         <ErrorState message={error ?? 'Employee not found.'} onRetry={reload} />
       </>
     );
-
-  function resetTaskForm() {
-    setEditingTaskId(null);
-    setTitle('');
-    setDescription('');
-    setPriority('medium');
-    setDeadline(defaultDeadline());
-  }
-
-  async function handleAssign() {
-    if (!id || title.trim().length === 0) return;
-    if (editingTaskId) {
-      const ok = await editTask(editingTaskId, { title: title.trim(), description: description.trim(), deadline, priority });
-      if (ok) resetTaskForm();
-      return;
-    }
-    const ok = await create({ title: title.trim(), description: description.trim(), assignedTo: id, deadline, priority });
-    if (ok) {
-      resetTaskForm();
-      reloadTasks();
-    }
-  }
-
-  function startEditTask(task: Task) {
-    setEditingTaskId(task.id);
-    setTitle(task.title);
-    setDescription(task.description ?? '');
-    setPriority(task.priority);
-    setDeadline(new Date(task.deadline));
-  }
 
   async function confirmDeleteTask() {
     if (!pendingDeleteTask) return;
@@ -282,6 +237,30 @@ export function StaffProfileScreen() {
                 ))}
                 {locations.length === 0 && <Menu.Item title="No locations yet — add one first" disabled />}
               </Menu>
+
+              <List.Item
+                title="Roaming employee"
+                description="Won't be auto-checked-out for leaving their assigned location."
+                descriptionNumberOfLines={2}
+                style={styles.roamingRow}
+                right={(props) => (
+                  <Switch
+                    {...props}
+                    value={employee.is_roaming}
+                    onValueChange={setRoaming}
+                    disabled={savingRoaming}
+                  />
+                )}
+              />
+
+              <List.Item
+                title="Active employee"
+                description="Off means they can no longer check in — for staff who've left."
+                descriptionNumberOfLines={2}
+                style={styles.roamingRow}
+                right={(props) => <Switch {...props} value={employee.active} onValueChange={setActive} disabled={savingActive} />}
+              />
+
               {saveError && <HelperText type="error">{saveError}</HelperText>}
             </Card.Content>
           </Card>
@@ -289,96 +268,42 @@ export function StaffProfileScreen() {
       )}
 
       {tab === 'tasks' && (
-        <FlatList
-          data={tasks}
-          keyExtractor={(item) => item.id}
-          ListHeaderComponent={
-            <View>
-              <Card style={styles.card}>
-                <Card.Content>
-                  <Text variant="titleMedium" style={styles.formTitle}>
-                    {editingTaskId ? `Edit task for ${firstName}` : `Assign a task to ${firstName}`}
-                  </Text>
-
-                  <TextInput label="Task name" value={title} onChangeText={setTitle} style={styles.input} />
-                  <TextInput
-                    label="Description (optional)"
-                    value={description}
-                    onChangeText={setDescription}
-                    multiline
-                    style={styles.input}
-                  />
-
-                  <AppSegmentedButtons
-                    value={priority}
-                    onValueChange={(v) => setPriority(v as TaskPriority)}
-                    style={styles.input}
-                    buttons={[
-                      { value: 'low', label: 'Low' },
-                      { value: 'medium', label: 'Medium' },
-                      { value: 'high', label: 'High' },
-                    ]}
-                  />
-
-                  <PaperButton
-                    mode="outlined"
-                    icon="calendar-clock-outline"
-                    textColor={theme.colors.onSurface}
-                    onPress={() => (Platform.OS === 'android' ? openAndroidDateTimePicker(deadline, setDeadline) : setPickerVisible(true))}
-                    style={styles.input}
-                  >
-                    Deadline: {deadline.toLocaleString()}
-                  </PaperButton>
-                  {pickerVisible && Platform.OS !== 'android' && (
-                    <DateTimePicker
-                      value={deadline}
-                      mode="datetime"
-                      onChange={(_, selected) => {
-                        setPickerVisible(Platform.OS === 'ios');
-                        if (selected) setDeadline(selected);
-                      }}
-                    />
-                  )}
-
-                  {(editingTaskId ? tasksError : createError) && (
-                    <HelperText type="error">{editingTaskId ? tasksError : createError}</HelperText>
-                  )}
-
-                  <View style={styles.editActionsRow}>
-                    {editingTaskId && (
-                      <PaperButton mode="text" onPress={resetTaskForm} disabled={updatingId === editingTaskId}>
-                        Cancel edit
-                      </PaperButton>
-                    )}
-                    <PaperButton
-                      mode="contained"
-                      onPress={handleAssign}
-                      loading={editingTaskId ? updatingId === editingTaskId : submitting}
-                      disabled={(editingTaskId ? updatingId === editingTaskId : submitting) || title.trim().length === 0}
-                    >
-                      {editingTaskId ? 'Save changes' : 'Assign task'}
-                    </PaperButton>
-                  </View>
-                </Card.Content>
-              </Card>
-
-              <Text variant="titleMedium" style={styles.sectionTitle}>
-                Tasks assigned to {firstName}
-              </Text>
-              {!loadingTasks && tasks.length === 0 && <Text style={styles.emptyState}>No tasks yet.</Text>}
-            </View>
-          }
-          renderItem={({ item }) => (
-            <TaskCard
-              task={item}
-              busy={updatingId === item.id || deletingId === item.id}
-              onAdvance={item.status === 'done' ? undefined : () => setStatus(item.id, item.status === 'assigned' ? 'in_progress' : 'done')}
-              onEdit={() => startEditTask(item)}
-              onDelete={() => setPendingDeleteTask(item)}
-            />
-          )}
-          contentContainerStyle={styles.listContent}
-        />
+        <View style={styles.flex}>
+          <FlatList
+            style={styles.flex}
+            data={tasks}
+            keyExtractor={(item) => item.id}
+            ListHeaderComponent={
+              <View>
+                <Text variant="titleMedium" style={styles.sectionTitle}>
+                  Tasks assigned to {firstName}
+                </Text>
+                {!loadingTasks && tasks.length === 0 && <Text style={styles.emptyState}>No tasks yet.</Text>}
+              </View>
+            }
+            renderItem={({ item }) => (
+              <TaskCard
+                task={item}
+                busy={updatingId === item.id || deletingId === item.id}
+                onStatusChange={(status) => setStatus(item.id, status)}
+                onEdit={() =>
+                  router.push({
+                    pathname: '/(admin)/staff/task',
+                    params: { employeeId: id, employeeName: employee.name, taskId: item.id },
+                  })
+                }
+                onDelete={() => setPendingDeleteTask(item)}
+              />
+            )}
+            contentContainerStyle={styles.listContent}
+          />
+          <FAB
+            icon="plus"
+            label="Assign task"
+            style={styles.fab}
+            onPress={() => router.push({ pathname: '/(admin)/staff/task', params: { employeeId: id, employeeName: employee.name } })}
+          />
+        </View>
       )}
 
       {tab === 'shifts' && (
@@ -426,7 +351,9 @@ export function StaffProfileScreen() {
               </Text>
             </View>
           )}
-          renderItem={({ item }) => <AttendanceHistoryRow record={item} />}
+          renderItem={({ item }) => (
+            <AttendanceHistoryRow record={item} onPress={() => router.push(`/(admin)/attendance/${item.id}`)} />
+          )}
           onEndReached={loadMoreAttendance}
           onEndReachedThreshold={0.5}
           ListFooterComponent={
@@ -511,11 +438,20 @@ const styles = StyleSheet.create({
   locationButton: {
     alignSelf: 'flex-start',
   },
-  formTitle: {
-    marginBottom: 12,
+  roamingRow: {
+    paddingHorizontal: 0,
+    marginTop: 12,
   },
   input: {
     marginBottom: 12,
+  },
+  flex: {
+    flex: 1,
+  },
+  fab: {
+    position: 'absolute',
+    right: 16,
+    bottom: 16,
   },
   sectionTitle: {
     paddingHorizontal: 16,

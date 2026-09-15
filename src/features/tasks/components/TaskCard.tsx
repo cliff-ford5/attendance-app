@@ -1,5 +1,6 @@
 import { StyleSheet, View } from 'react-native';
-import { Button, Card, Chip, Icon, IconButton, Text } from 'react-native-paper';
+import { Card, Chip, Icon, IconButton, Text } from 'react-native-paper';
+import { AppSegmentedButtons } from '@/components/AppSegmentedButtons';
 import { statusColors } from '@/constants/theme';
 import { isOverdue, type Task, type TaskPriority, type TaskStatus } from '../types';
 
@@ -30,14 +31,19 @@ const PRIORITY_COLOR: Record<TaskPriority, string> = {
 export function TaskCard({
   task,
   assigneeName,
-  onAdvance,
+  onStatusChange,
   onEdit,
   onDelete,
   busy,
 }: {
   task: Task;
   assigneeName?: string;
-  onAdvance?: () => void;
+  // A direct 3-way status picker, not a single "advance" button — a task
+  // marked done by mistake needs to go backward just as easily as forward,
+  // and RLS (`tasks_update_assignee_or_admin`) already allows setting any
+  // status, so the old forward-only button was purely a UI restriction the
+  // data never actually had.
+  onStatusChange?: (status: TaskStatus) => void;
   // Admin-only actions (wired from StaffProfileScreen, where tasks are
   // assigned in the first place) — omitted everywhere else this card
   // renders (the employee's own task list, the admin's read-only overview).
@@ -46,7 +52,6 @@ export function TaskCard({
   busy?: boolean;
 }) {
   const overdue = isOverdue(task);
-  const nextLabel = task.status === 'assigned' ? 'Start' : task.status === 'in_progress' ? 'Mark done' : undefined;
 
   return (
     <Card style={styles.card}>
@@ -99,10 +104,17 @@ export function TaskCard({
           </Text>
         </View>
 
-        {onAdvance && nextLabel && (
-          <Button mode="contained-tonal" onPress={onAdvance} loading={busy} disabled={busy} style={styles.button}>
-            {nextLabel}
-          </Button>
+        {onStatusChange && (
+          <AppSegmentedButtons
+            value={task.status}
+            onValueChange={(v) => onStatusChange(v as TaskStatus)}
+            style={styles.button}
+            buttons={[
+              { value: 'assigned', label: 'Assigned', disabled: busy },
+              { value: 'in_progress', label: 'In progress', disabled: busy },
+              { value: 'done', label: 'Done', disabled: busy },
+            ]}
+          />
         )}
       </Card.Content>
     </Card>

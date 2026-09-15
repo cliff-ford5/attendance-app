@@ -15,11 +15,16 @@ export function AttendanceStatCard({
   color: string;
 }) {
   return (
-    <Card style={styles.card}>
+    // mode="contained" (MD3's flat filled variant, no elevation shadow) —
+    // Paper's default "elevated" Card still casts its Android drop-shadow
+    // even with a custom backgroundColor, which read as an odd gray halo
+    // ringing each tinted card (confirmed by reading Card.js: elevation is
+    // only zeroed for non-"elevated" modes).
+    <Card mode="contained" style={[styles.card, { backgroundColor: `${color}17` }]}>
       <Card.Content>
         <View style={styles.header}>
-          <View style={[styles.iconWrap, { backgroundColor: `${color}22` }]}>
-            <Icon source={icon} size={16} color={color} />
+          <View style={[styles.iconWrap, { backgroundColor: color }]}>
+            <Icon source={icon} size={16} color="#FFFFFF" />
           </View>
           <Text variant="labelMedium" style={styles.label} numberOfLines={1}>
             {label}

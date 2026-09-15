@@ -31,6 +31,16 @@ export async function createLocation(input: LocationInput): Promise<Location> {
   return data as Location;
 }
 
+// No `on delete` clause on employees.location_id (0001) — deleting a
+// location still assigned to any employee fails with a real foreign-key
+// violation rather than silently unassigning them or cascading. Deliberate:
+// the admin should reassign those employees first, not have it happen by
+// accident.
+export async function deleteLocation(id: string): Promise<void> {
+  const { error } = await supabase.from('locations').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function updateLocation(id: string, input: LocationInput): Promise<Location> {
   const { data, error } = await supabase
     .from('locations')

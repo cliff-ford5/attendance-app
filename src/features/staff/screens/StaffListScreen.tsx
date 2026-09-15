@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useRouter } from 'expo-router';
 import { FlatList, RefreshControl, StyleSheet, View } from 'react-native';
-import { List, Searchbar, useTheme } from 'react-native-paper';
+import { Chip, List, Searchbar, useTheme } from 'react-native-paper';
 import { AppAvatar } from '@/components/AppAvatar';
 import { AppSegmentedButtons } from '@/components/AppSegmentedButtons';
 import { EmptyState, ErrorState, LoadingState, NotConfiguredState } from '@/components/ScreenState';
@@ -18,6 +18,11 @@ export function StaffListScreen() {
   const { stats, loading: loadingStats, error: statsError, reload: reloadStats } = useAdminDashboard();
   const [tab, setTab] = useState<'dashboard' | 'staff'>('dashboard');
   const [query, setQuery] = useState('');
+  // Defaults to hiding departed staff — matches Leave's own "defaults to
+  // Pending" reasoning: the roster's normal job is showing who's actually
+  // on staff, not a permanent log of everyone who ever was. Still just one
+  // tap away via the segmented control, not hidden behind a menu.
+  const [staffFilter, setStaffFilter] = useState<'active' | 'all'>('active');
 
   // Client-side — same "get everything, filter locally" pattern as the
   // rest of this app's admin screens, fine at this data volume. Matches
@@ -25,11 +30,16 @@ export function StaffListScreen() {
   // just a literal name lookup.
   const filteredEmployees = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return employees;
-    return employees.filter((e) =>
-      [e.name, e.position, e.department].some((field) => field?.toLowerCase().includes(q))
-    );
-  }, [employees, query]);
+    return employees
+      .filter((e) => staffFilter === 'all' || e.active)
+      .filter((e) => !q || [e.name, e.position, e.department].some((field) => field?.toLowerCase().includes(q)));
+  }, [employees, query, staffFilter]);
+
+  // The tab badge counts current headcount (active only), independent of
+  // whichever staffFilter is selected below it — "Staff (N)" should read
+  // as a stable stat, not a number that jumps around as the list filter
+  // changes underneath it.
+  const activeCount = useMemo(() => employees.filter((e) => e.active).length, [employees]);
 
   if (!isSupabaseConfigured) return <NotConfiguredState />;
 
@@ -41,7 +51,7 @@ export function StaffListScreen() {
         style={styles.tabs}
         buttons={[
           { value: 'dashboard', label: 'Dashboard' },
-          { value: 'staff', label: `Staff (${employees.length})` },
+          { value: 'staff', label: `Staff (${activeCount})` },
         ]}
       />
 
@@ -107,22 +117,50 @@ export function StaffListScreen() {
           keyExtractor={(item) => item.id}
           refreshControl={<RefreshControl refreshing={false} onRefresh={reload} />}
           ListHeaderComponent={
-            <Searchbar
-              placeholder="Search staff"
-              value={query}
-              onChangeText={setQuery}
-              style={styles.searchbar}
-              elevation={0}
-            />
+            <>
+              <Searchbar
+                placeholder="Search staff"
+                value={query}
+                onChangeText={setQuery}
+                style={styles.searchbar}
+                elevation={0}
+              />
+              <AppSegmentedButtons
+                value={staffFilter}
+                onValueChange={(v) => setStaffFilter(v as typeof staffFilter)}
+                style={styles.staffFilter}
+                buttons={[
+                  { value: 'active', label: 'Active' },
+                  { value: 'all', label: 'All' },
+                ]}
+              />
+            </>
           }
           ListEmptyComponent={
-            <EmptyState message={employees.length === 0 ? 'No employees yet.' : 'No staff match this search.'} />
+            <EmptyState
+              message={
+                employees.length === 0
+                  ? 'No employees yet.'
+                  : filteredEmployees.length === 0 && staffFilter === 'active'
+                    ? 'No active staff match this search — try "All" to include inactive staff.'
+                    : 'No staff match this search.'
+              }
+            />
           }
           renderItem={({ item }) => (
             <List.Item
               title={item.name}
               description={item.position || item.department || item.email}
               left={(props) => <AppAvatar name={item.name} avatarPath={item.avatar_path} style={props.style} />}
+              right={
+                item.active
+                  ? undefined
+                  : (props) => (
+                      <Chip compact style={[styles.inactiveChip, props.style]}>
+                        Inactive
+                      </Chip>
+                    )
+              }
               onPress={() => router.push(`/(admin)/staff/${item.id}`)}
             />
           )}
@@ -153,5 +191,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
     marginTop: 8,
     marginBottom: 4,
+  },
+  staffFilter: {
+    marginHorizontal: 16,
+    marginBottom: 4,
+  },
+  inactiveChip: {
+    backgroundColor: statusColors.neutral,
   },
 });

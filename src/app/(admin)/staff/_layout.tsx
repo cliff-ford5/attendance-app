@@ -1,10 +1,7 @@
 import { router, Stack } from 'expo-router';
 import { AppHeader } from '@/components/AppHeader';
-import { useAuth } from '@/features/auth/hooks/useAuth';
 
 export default function StaffStackLayout() {
-  const { signOut } = useAuth();
-
   return (
     <Stack>
       <Stack.Screen
@@ -13,11 +10,12 @@ export default function StaffStackLayout() {
           header: () => (
             <AppHeader
               title="Staff"
-              mode="large"
+              mode="medium"
               actions={[
                 { icon: 'map-marker-outline', onPress: () => router.push('/(admin)/staff/locations'), accessibilityLabel: 'Locations' },
-                { icon: 'logout', onPress: () => signOut(), accessibilityLabel: 'Sign out' },
+                { icon: 'calendar-star', onPress: () => router.push('/(admin)/staff/holidays'), accessibilityLabel: 'Holidays' },
               ]}
+              accountMenu
             />
           ),
         }}
@@ -29,6 +27,31 @@ export default function StaffStackLayout() {
       <Stack.Screen
         name="locations"
         options={{ header: () => <AppHeader title="Locations" onBack={() => router.back()} /> }}
+      />
+      <Stack.Screen
+        name="task"
+        options={{
+          presentation: 'modal',
+          header: () => <AppHeader title="Assign Task" onClose={() => router.back()} />,
+        }}
+      />
+      <Stack.Screen
+        name="location-form"
+        options={{
+          presentation: 'modal',
+          header: () => <AppHeader title="Add Location" onClose={() => router.back()} />,
+        }}
+      />
+      <Stack.Screen
+        name="holidays"
+        options={{ header: () => <AppHeader title="Holidays" onBack={() => router.back()} /> }}
+      />
+      <Stack.Screen
+        name="holiday-form"
+        options={{
+          presentation: 'modal',
+          header: () => <AppHeader title="Add Holiday" onClose={() => router.back()} />,
+        }}
       />
     </Stack>
   );

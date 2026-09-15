@@ -1,26 +1,100 @@
-import { useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { Card, Chip, Text, useTheme, Button as PaperButton } from 'react-native-paper';
+import { Card, Chip, Dialog, Portal, Text, useTheme, Button as PaperButton } from 'react-native-paper';
+import { AppHeader } from '@/components/AppHeader';
 import { ErrorState, LoadingState, NotConfiguredState } from '@/components/ScreenState';
+import { useAuth } from '@/features/auth/hooks/useAuth';
 import { isSupabaseConfigured } from '@/services/supabase';
 import { statusColors } from '@/constants/theme';
 import { formatDuration } from '@/lib/formatDuration';
 import { dayLabel } from '@/lib/groupByDay';
 import { useAttendanceRecord } from '../hooks/useAttendanceRecord';
+import * as attendanceService from '../services/attendanceService';
 import { openInMaps } from '../services/locationService';
 
 // Fetches the one record directly by id (RLS scopes it to the caller's own
 // rows) — not "find it in whatever's loaded," which breaks for anything
-// beyond the paginated list's first page or two.
+// beyond the paginated list's first page or two. Shared by both the
+// employee's own history and the admin's cross-employee history — the
+// header's Edit action (added 2026-09-14) only appears for admins, decided
+// here rather than duplicated per route group, same reasoning as the task/
+// location forms deciding their own dynamic title.
 export function AttendanceDetailScreen() {
   const theme = useTheme();
+  const router = useRouter();
   const { id } = useLocalSearchParams<{ id: string }>();
+  const { profile } = useAuth();
   const { record, loading, error, reload } = useAttendanceRecord(id);
+  const isAdmin = profile?.role === 'admin' || profile?.role === 'superAdmin';
+  const [deleteConfirmVisible, setDeleteConfirmVisible] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  if (!isSupabaseConfigured) return <NotConfiguredState />;
-  if (loading) return <LoadingState label="Loading…" />;
-  if (error) return <ErrorState message={error} onRetry={reload} />;
-  if (!record) return <ErrorState message="This attendance record couldn't be found." onRetry={reload} />;
+  async function confirmDelete() {
+    if (!id) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await attendanceService.deleteAttendanceRecord(id);
+      setDeleteConfirmVisible(false);
+      router.back();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'Could not delete this record.');
+    } finally {
+      setDeleting(false);
+    }
+  }
+
+  const header = (
+    <Stack.Screen
+      options={{
+        header: () => (
+          <AppHeader
+            title="Attendance details"
+            onBack={() => router.back()}
+            actions={
+              isAdmin
+                ? [
+                    { icon: 'pencil-outline', onPress: () => router.push(`/(admin)/attendance/edit?id=${id}`), accessibilityLabel: 'Edit' },
+                    { icon: 'trash-can-outline', onPress: () => setDeleteConfirmVisible(true), accessibilityLabel: 'Delete' },
+                  ]
+                : undefined
+            }
+          />
+        ),
+      }}
+    />
+  );
+
+  if (!isSupabaseConfigured)
+    return (
+      <>
+        {header}
+        <NotConfiguredState />
+      </>
+    );
+  if (loading)
+    return (
+      <>
+        {header}
+        <LoadingState label="Loading…" />
+      </>
+    );
+  if (error)
+    return (
+      <>
+        {header}
+        <ErrorState message={error} onRetry={reload} />
+      </>
+    );
+  if (!record)
+    return (
+      <>
+        {header}
+        <ErrorState message="This attendance record couldn't be found." onRetry={reload} />
+      </>
+    );
 
   const isOpen = !record.check_out_at;
   const dateLabel = new Date(record.check_in_at).toLocaleDateString(undefined, {
@@ -61,6 +135,7 @@ export function AttendanceDetailScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.content}>
+      {header}
       <Text variant="titleMedium" style={styles.date}>
         {dateLabel}
       </Text>
@@ -163,6 +238,28 @@ export function AttendanceDetailScreen() {
           )}
         </Card.Content>
       </Card>
+
+      <Portal>
+        <Dialog visible={deleteConfirmVisible} onDismiss={() => setDeleteConfirmVisible(false)}>
+          <Dialog.Title>Delete this attendance record?</Dialog.Title>
+          <Dialog.Content>
+            <Text variant="bodyMedium">This can't be undone.</Text>
+            {deleteError && (
+              <Text variant="bodySmall" style={styles.deleteError}>
+                {deleteError}
+              </Text>
+            )}
+          </Dialog.Content>
+          <Dialog.Actions>
+            <PaperButton onPress={() => setDeleteConfirmVisible(false)} disabled={deleting}>
+              Cancel
+            </PaperButton>
+            <PaperButton onPress={confirmDelete} loading={deleting} disabled={deleting}>
+              Delete
+            </PaperButton>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </ScrollView>
   );
 }
@@ -222,5 +319,9 @@ const styles = StyleSheet.create({
   noteText: {
     flex: 1,
     opacity: 0.7,
+  },
+  deleteError: {
+    marginTop: 8,
+    color: statusColors.danger,
   },
 });
