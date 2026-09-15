@@ -117,3 +117,21 @@ export type Task = {
   priority: TaskPriority;
   completed_at: string | null;
 };
+
+// Populated only by DB triggers (supabase/0028_notifications.sql) — no
+// client code ever inserts one directly. `type` is deliberately a plain
+// string, not a checked union: future scheduled types (task_overdue,
+// checkout_reminder) will land the same shape once their trigger timing is
+// decided, without a schema/type change here.
+export type NotificationType = 'task_assigned' | 'leave_decided' | 'leave_submitted';
+
+export type Notification = {
+  id: string;
+  recipient_id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  related_id: string | null;
+  read_at: string | null;
+  created_at: string;
+};

@@ -20,7 +20,7 @@
 
 - **KPI formula** — what actually counts toward performance. Explicitly "do it last" — stub screen exists, no schema/calculation.
 - **Notifications** — deadline reminders, auto-checkout confirmation, etc. Explicitly "brainstorm later" — not built.
-- **Admin web view, deployed on Vercel (discussed 2026-09-14)** — an admin-facing subset of the same app (Dashboard, Staff, Recent History + filters + CSV export, Leave approvals, Tasks including assign/edit/delete) run via Expo's existing web target, deployed to Vercel since `../crm` already lives there (same team, no new platform). Explicitly scoped as a UI/UX-only pass — same Supabase backend, same data, same flows (e.g. task assignment stays reached via an employee's Staff Profile, not a new standalone picker) — just a responsive layout making use of a bigger screen, not a feature port. Deliberately excludes the employee-facing GPS check-in/background-geofencing/camera-attachment flows, which either don't work the same way in a browser or don't apply to an admin at a desk. Not started — no code, no `expo start --web` test done yet.
+- **Admin web view — now its own repo, `attendance-admin` (discussed 2026-09-14, first deploy 2026-09-15, moved to its own repo the same day — see the dated Completed entries)**: Dashboard, Staff, Attendance, Tasks, and Leave are all real now (as of 2026-09-15), including the Staff Profile Tasks/Attendance tabs. Only payroll/wage management remains, still blocked on the pay-structure question in the Pending section below. **`attendance-admin` now has its own full CLAUDE.md/ARCHITECTURE.md/AGENTS.md/RULES.md/TODO.md** (added 2026-09-15, same four-file-plus-TODO structure as this repo) — its own history and pending work now live there, not here; this repo's docs stay the source of truth only for shared backend/business rules (schema, RLS, what a feature actually means), which `attendance-admin/CLAUDE.md` explicitly points back to rather than duplicating.
 - **Wage/pay-rate management, deferred specifically to the web view (2026-09-14)** — the HR-management gap audit's wage/pay-rate item (see Pending, below) is admin-only desk-based data entry, the same shape as the rest of the web-view scope above, so the user chose to wait for that rather than build it into the mobile app now. Still genuinely blocked on the same unanswered question regardless of platform: hourly, fixed daily rate, flat-rate per job, or fixed salary — that decides the schema, and needs answering before any of this is designed, mobile or web.
 
 ## Pending
@@ -51,6 +51,98 @@
 ~~Leave/request attachments~~ — **done (2026-09-12)**, see the dated entry below.
 
 ## Completed
+
+### 2026-09-15 — Tasks and Attendance tabs added to Staff Profile in `attendance-admin`
+
+Closes out the deferred item from the Attendance/Tasks module entries below — `attendance-admin` is now feature-complete relative to mobile's admin surface, minus payroll (still blocked on the pay-structure question above) and the Weekly schedule section (no web module for it yet, out of scope for this pass).
+
+Tasks tab is the real create/edit/delete/status-change surface the standalone `/tasks` screen deliberately omits — assigning now happens here, from the employee it's for, matching the "no standalone assign form with an employee picker" decision. Attendance tab is per-employee history grouped by day, same pagination as the standalone Attendance module, each row deep-linking to `/attendance/:id`.
+
+Deployed manually via Vercel CLI (GitHub auto-deploy still not connected — see the entry below).
+
+### 2026-09-15 — Leave module built in `attendance-admin` (all five nav screens now real)
+
+Fifth and last of the initial nav screens — Dashboard, Staff, Attendance, Tasks, and Leave are all real now; the only deferred piece across the whole set is the attendance+task tabs on Staff Profile (see the Attendance module entry above).
+
+Mirrors mobile's `LeaveApprovalsScreen`: multi-select status filter defaulting to Pending, approve/reject on pending requests. Evidence viewing got real web equivalents instead of mobile's native affordances — the optional photo attachment opens in an in-page lightbox (same short-lived signed URL against the private `leave-attachments` bucket), the optional submission location opens Google Maps in a new tab instead of a native Maps deep link.
+
+Deliberately not built: editing or hard-deleting someone else's request from this admin view — mobile's own approvals screen doesn't expose that either, even though RLS (0027) technically allows admin delete/edit.
+
+Deployed manually via Vercel CLI (GitHub auto-deploy still not connected — see the entry below).
+
+### 2026-09-15 — Tasks module built in `attendance-admin`
+
+Fourth real screen. Deliberately read-only, mirroring mobile's own `TasksOverviewScreen` exactly — assigning/editing/deleting/status-change is a resolved mobile decision to live on an employee's Staff Profile, not an oversight this module should route around. Multi-select filter (Overdue/Assigned/In progress/Done, OR-combined — a task can be both "Assigned" and "Overdue"), overdue always sorted first.
+
+Create/edit/delete/status-change will land here once the Staff Profile attendance+task tabs are built (see the deferred item in the Attendance module entry below).
+
+Deployed manually via Vercel CLI (GitHub auto-deploy still not connected — see the entry below).
+
+### 2026-09-15 — Attendance module built in `attendance-admin`
+
+Third real screen. Checked-in / Recent history tabs (same split as mobile's `StaffAttendanceScreen`), the same multi-select flag filters (Late/Left early/Half day/Auto checkout, OR-combined server-side) and offset pagination via "Load more". Checked-in rows get an inline admin "Check out" action.
+
+Record detail (`/attendance/:id`): edit check-in/out time, day type, Late/Left-early — check-out only editable once a shift is closed, same reasoning as mobile's edit screen — plus delete with a confirm step. Reused the existing RLS (`attendance_update_admin`, `attendance_delete_admin_only`) — no new migration.
+
+CSV export: date-range picker (defaults to this month so far) + a real browser download (Blob/object URL) instead of mobile's OS share sheet, since a website actually has a "download" concept mobile doesn't.
+
+Deliberately deferred (per the user, 2026-09-15): embedding an employee's attendance + task history as tabs on their Staff Profile page, the way mobile's per-employee history does — picked up when the Tasks module is built.
+
+Deployed manually via Vercel CLI (GitHub auto-deploy still not connected — see the entry below).
+
+### 2026-09-15 — Staff module built in `attendance-admin`
+
+Second real screen in the admin web view (after Dashboard). Roster list (`/staff`): search by name/position/department, Active/All filter defaulting to Active, active-count header — same reasoning as mobile's `StaffListScreen`. Profile (`/staff/:id`): edit name/position/department/mobile (not email, same auth-desync reasoning as mobile's `staffService`), assign location from a dropdown, toggle roaming and active status — active toggle blocks check-in immediately via the existing RLS enforcement (0026), this is just a second UI for the same switch.
+
+Deliberately not built: `annual_leave_days` editing (still not editable anywhere — see the wage/pay-rate open item above) and location create/edit/delete (stays mobile-only for now; this module only reads the list to populate the assignment dropdown).
+
+Deployed manually via Vercel CLI (GitHub auto-deploy still not connected — see the entry below).
+
+### 2026-09-15 — Dashboard redesign in `attendance-admin` (real fix for login-stuck bug also confirmed)
+
+Fixed the login-stuck bug: `LoginScreen` sat outside `RequireAdmin`'s guard entirely, so nothing redirected away from `/login` once sign-in succeeded — added `if (session) return <Navigate to="/" replace />`.
+
+Also redesigned the Dashboard, called "stale" — it was a flat row of identical cards (bare colored top-border, no icon, no grouping, not clickable, no page context). Changed:
+- Grouped stats by meaning: "Needs your attention" (pending leave requests, overdue tasks — shown first, only when non-zero) vs. "Today" (checked in now, late, on leave) — actionable items no longer sit visually level with passive status.
+- Added icon badges via a new `src/components/icons.tsx`, matching `../crm/src/components/icons.tsx`'s own convention exactly (hand-drawn inline SVGs, no icon-library dependency).
+- Cards are now clickable/keyboard-navigable to the relevant screen (`/attendance`, `/leave`, `/tasks`), matching the mobile dashboard's existing tap-through behavior — previously this web version didn't do this despite the routes already existing.
+- Added a greeting + today's-date header so the page reads as a landing screen, not a bare stat grid.
+- Switched the grid from `flexWrap` to CSS grid (`repeat(auto-fit, minmax(200px, 1fr))`) for even alignment at any width.
+
+Deployed manually via Vercel CLI (GitHub auto-deploy still not connected for this repo — see the entry below).
+
+### 2026-09-15 — Admin web view moved to its own repo (`attendance-admin`), replacing the React Native Web approach
+
+Direct follow-up to the same-day React Native Web deploy (see the entry below) — asked directly whether that approach was actually scalable long-term given payroll/wage management is planned for this surface too. Honest answer: no. Reasoning, in order of how much it mattered:
+
+1. **Payroll needs real desktop UI** (rate tables, bulk edits, filters) — exactly the kind of dense, mouse/keyboard-driven interface Paper's touch-first components fight against on a browser.
+2. **The two bugs fixed the same day weren't a one-time cost** — they're a preview of a recurring category. Expo Router's web export isn't a first-class "deploy this like a website" citizen; it's a mobile-first tool repurposed for web hosting, and that friction recurs (new SDK versions, new quirks), not just once.
+3. **`../crm` already runs a real web stack** — checked directly rather than assumed (a prior claim this was Next.js was wrong; it's actually Vite + React + React Router, no UI framework, plain `theme.css`). Matching that gives this app the same pattern the team already runs elsewhere, instead of a third, RN-specific one.
+
+**What carries over, what doesn't**: the backend (same Supabase project, same RLS, same `employees` table for auth) is 100% shared — this was never a backend decision. The React Native *components* were never going to look right on desktop anyway. What's hand-copied (not live-shared, no monorepo tooling set up for this) is the type shapes and business logic *shape* — `src/domain/database.ts`, `src/domain/dateOnly.ts`, and each feature's service-function queries mirror the mobile app's equivalents exactly, just retyped into plain TS + `@supabase/supabase-js` calls instead of imported.
+
+**Built**: a new repo, `attendance-admin` (private, `github.com/cliff-ford5/attendance-admin`) — Vite + React + TypeScript + React Router, matching `crm`'s conventions exactly (plain CSS via `src/styles/theme.css`, no component library, `domain`/`infrastructure`/`features`/`screens`/`components` folder shape). Ported the mobile app's design tokens (coral `#FF385C`, warm `#FFFDF9` background, `#222`/`#717` text pairing, Inter) as CSS custom properties. A persistent sidebar (`AdminLayout`) replaces the mobile app's bottom tab bar — the one piece of navigation chrome that's genuinely desktop-specific; everything else is just a page of content. `RequireAdmin` mirrors the mobile app's `(admin)/_layout.tsx` role gate (redirect signed-out to `/login`, block `role: 'employee'` entirely — this tool has no employee-facing side, unlike the mobile app). Dashboard is the first real screen (the same 5-stat aggregation as the mobile app's `useAdminDashboard`, hand-ported). Staff/Attendance/Tasks/Leave are placeholder stubs, not built yet.
+
+**Deployed**: same `attendance-web` Vercel project, repurposed — the React Native Web deploy was removed and replaced with this. Needed an explicit `vercel.json` SPA-fallback rewrite (`/(.*)→/index.html`) since a bare client-side route like `/login` 404'd without one — Vercel's own Vite auto-detection didn't apply that on its own. Supabase env vars set directly on the Vercel project via `vercel env add` (same project as the mobile app, so same values). GitHub auto-deploy-on-push failed to link again — same as `attendance-download` and the prior `attendance-web` attempt; this is clearly an account-level Vercel-GitHub-App authorization gap at this point (three-for-three), not a per-repo fluke, and worth fixing once via the Vercel dashboard rather than retrying per-repo.
+
+**Why**: direct user question ("is this scalable long term... keep in mind we will put a payroll also here"), answered honestly rather than defending the same-day work — the RN-web deploy wasn't wasted (it proved the concept and took near-zero time), but it's not what should carry the real, growing feature set.
+
+**How to apply**: `npm run build` clean (tsc + vite build) — 485KB bundle (140KB gzipped), versus the RN-web export's 3.6MB, a concrete measure of the leanness difference. Live at `https://attendance-web-wheat-two.vercel.app`. **Verified so far**: build succeeds, all routes resolve (200, including the SPA-fallback ones), the JS bundle serves. **Not yet verified**: an actual browser — login flow, whether the Dashboard's stats render real numbers, whether `RequireAdmin`'s redirect logic works correctly. Needs the user to check in a real browser before trusting it further, same as every other "I can't see it, only curl it" limitation this session.
+
+### 2026-09-15 — First real deploy of the admin web view; found and fixed two genuine static-export/hosting bugs
+
+Direct user request to actually start the web view, after "we already have the logic, this will be just UI." Rather than assume that and start writing responsive-layout code, tested it first: `npx expo export -p web` succeeded with zero code changes, exporting all 46 routes (admin and employee alike) — a real, verified signal the shared logic genuinely is platform-agnostic, not just an assumption.
+
+Deployed that export as-is via `vercel --prod` (no GitHub link — see below) to confirm it actually runs, before scoping down to admin-only or doing any real layout work. Two real bugs surfaced, both about how the static export is hosted, not the app's own code:
+
+1. **Route-group URLs 404'd** (`/login`, `/tasks`, `/kpi`, etc.) — Expo Router's static export does emit a flat top-level `.html` for every route including ones under a route group like `(auth)`, but Vercel doesn't resolve extensionless URLs to `.html` files by default for an unrecognized static project. Fixed with a `vercel.json` `{"cleanUrls": true}`.
+2. **Real blank-screen bug**: the root layout gates all rendering on `useFonts()` resolving (`if (!fontsLoaded) return null`) — and the Inter font files 404'd, so it never did. Root cause: Vercel silently excludes any path containing a literal `node_modules` folder from static deployments (a documented Vercel default, not a bug in this project) — and Expo's export happens to nest the Google Fonts package's `.ttf` files under `assets/node_modules/@expo-google-fonts/...`, mirroring its path in `node_modules`. Confirmed by testing: a different asset folder without `node_modules` in its path (`assets/assets/...`) served fine; the font path didn't. Fixed by renaming that folder to `assets/_vendor` and patching the 49 matching path references inside the built JS bundle (`entry-*.js`) to match — a plain string replace, safe since bundled paths are string literals, not something Metro needs to re-resolve at this point.
+
+**Why this mattered to catch now rather than later**: both bugs are invisible to `curl` (they're either "the JS never executed" or "a resource the JS wants 404s at runtime") — confirmed the user's own browser console before diagnosing further, rather than guessing from server-side checks alone, same discipline as live-testing the mobile app on the emulator rather than trusting `tsc --noEmit`.
+
+**Genuine limitation, not yet solved**: this deploy is a manual snapshot, not CI-linked. `dist/` is gitignored (correctly — it's a build artifact) and the Vercel project's GitHub auto-connect failed the same way `attendance-download`'s did. Any future app code change needs a human (or Claude) to re-run `expo export -p web` → rename `assets/node_modules` → `assets/_vendor` and patch the bundle → `vercel --prod` from `dist/`, by hand, every time. Worth solving properly (e.g. a real Vercel build command that does this rename automatically, or fixing the GitHub connection) before this becomes the team's actual daily admin tool — acceptable for now since this is still step one (confirm it runs) before the real scope-down-and-restyle work.
+
+**How to apply**: live at `https://attendance-web-rouge-sigma.vercel.app` (project `attendance-web` under the `cliff9`/cliff-fords-team Vercel account). **Verified live**: user confirmed login renders and the blank-screen bug is gone after the fix. This is still the *entire* app, unscoped — the actual "admin-only, desktop-responsive layout" work described in the Deferred entry above hasn't started yet.
 
 ### 2026-09-15 — Closed four of the six CRUD gaps from the 2026-09-11 audit: attendance delete, employee deactivate, leave edit/delete, task backward status
 

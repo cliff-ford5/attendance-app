@@ -62,7 +62,7 @@ export default function AdminLayout() {
           tabBarIcon: ({ focused, color, size }) => (
             <AppTabBarIcon name={focused ? 'clipboard-list' : 'clipboard-list-outline'} focused={focused} color={color} size={size} />
           ),
-          header: () => <AppHeader title="Tasks" mode="medium" accountMenu />,
+          header: () => <AppHeader title="Tasks" mode="medium" accountMenu notifications />,
         }}
       />
       <Tabs.Screen
@@ -70,7 +70,7 @@ export default function AdminLayout() {
         options={{
           title: 'Leave',
           tabBarIcon: ({ focused, color, size }) => <AppTabBarIcon name="airplane-takeoff" focused={focused} color={color} size={size} />,
-          header: () => <AppHeader title="Leave" mode="medium" accountMenu />,
+          header: () => <AppHeader title="Leave" mode="medium" accountMenu notifications />,
         }}
       />
       <Tabs.Screen
@@ -84,7 +84,16 @@ export default function AdminLayout() {
           // Overview" title since it isn't squeezed against siblings there.
           tabBarLabel: 'KPI',
           tabBarIcon: ({ focused, color, size }) => <AppTabBarIcon name="chart-line" focused={focused} color={color} size={size} />,
-          header: () => <AppHeader title="KPI Overview" mode="medium" accountMenu />,
+          header: () => <AppHeader title="KPI Overview" mode="medium" accountMenu notifications />,
+        }}
+      />
+      {/* Reachable via the bell icon on AppHeader (notifications prop) —
+          not a bottom tab, same reasoning as the employee layout. */}
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          href: null,
+          title: 'Notifications',
         }}
       />
     </Tabs>

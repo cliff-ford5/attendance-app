@@ -2,11 +2,12 @@ import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { Image, Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Appbar, IconButton, Menu, Text, useTheme } from 'react-native-paper';
+import { Appbar, Badge, IconButton, Menu, Text, useTheme } from 'react-native-paper';
 import { AppAvatar } from './AppAvatar';
 import { SignOutDialog } from './SignOutDialog';
 import { headerTint } from '@/constants/theme';
 import { useAuth } from '@/features/auth/hooks/useAuth';
+import { useUnreadNotificationCount } from '@/features/notifications/hooks/useUnreadNotificationCount';
 
 export type AppHeaderAction = {
   icon: string;
@@ -31,6 +32,7 @@ export function AppHeader({
   onClose,
   actions,
   accountMenu = false,
+  notifications = false,
 }: {
   title: string;
   mode?: 'small' | 'medium';
@@ -50,6 +52,12 @@ export function AppHeader({
   // through — every tab-root header wants this, so it shouldn't be
   // per-screen boilerplate.
   accountMenu?: boolean;
+  // Renders a bell icon with a live unread-count badge, navigating to the
+  // role-appropriate Notifications screen on tap. Pulls its own count via
+  // useUnreadNotificationCount() (same "pull it from useAuth() itself"
+  // philosophy as accountMenu above) so no call site has to thread a count
+  // through — only pass true on tab-root headers, not drill-in/form ones.
+  notifications?: boolean;
 }) {
   // A custom React Navigation `header` render prop (used here instead of
   // the default header) isn't wrapped in a SafeAreaView the way the
@@ -67,11 +75,28 @@ export function AppHeader({
   const [confirmVisible, setConfirmVisible] = useState(false);
 
   const isAdmin = profile?.role !== 'employee';
+  const unreadCount = useUnreadNotificationCount(notifications ? profile?.id : undefined);
 
   async function handleSignOut() {
     setConfirmVisible(false);
     await signOut();
   }
+
+  const notificationsNode = notifications && (
+    <View style={styles.bellWrap}>
+      <IconButton
+        icon="bell-outline"
+        size={22}
+        onPress={() => router.push(isAdmin ? '/(admin)/notifications' : '/(employee)/notifications')}
+        accessibilityLabel={unreadCount > 0 ? `Notifications, ${unreadCount} unread` : 'Notifications'}
+      />
+      {unreadCount > 0 && (
+        <Badge size={16} style={styles.bellBadge}>
+          {unreadCount > 9 ? '9+' : unreadCount}
+        </Badge>
+      )}
+    </View>
+  );
 
   const accountMenuNode = accountMenu && (
     <Menu
@@ -133,6 +158,7 @@ export function AppHeader({
                   accessibilityLabel={action.accessibilityLabel}
                 />
               ))}
+              {notificationsNode}
               {accountMenuNode}
             </View>
           </View>
@@ -158,6 +184,7 @@ export function AppHeader({
         {actions?.map((action) => (
           <Appbar.Action key={action.icon} icon={action.icon} onPress={action.onPress} accessibilityLabel={action.accessibilityLabel} />
         ))}
+        {notificationsNode}
         {accountMenu && <View style={styles.avatarWrap}>{accountMenuNode}</View>}
       </Appbar.Header>
 
@@ -182,6 +209,15 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 16,
+  },
+  bellWrap: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
   },
   compactHeader: {
     elevation: 3,

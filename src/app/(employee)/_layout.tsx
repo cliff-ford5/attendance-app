@@ -70,7 +70,7 @@ export default function EmployeeLayout() {
           tabBarIcon: ({ focused, color, size }) => (
             <AppTabBarIcon name={focused ? 'clipboard-list' : 'clipboard-list-outline'} focused={focused} color={color} size={size} />
           ),
-          header: () => <AppHeader title="My Tasks" mode="medium" accountMenu />,
+          header: () => <AppHeader title="My Tasks" mode="medium" accountMenu notifications />,
         }}
       />
       <Tabs.Screen
@@ -86,7 +86,7 @@ export default function EmployeeLayout() {
         options={{
           title: 'My KPI',
           tabBarIcon: ({ focused, color, size }) => <AppTabBarIcon name="chart-line" focused={focused} color={color} size={size} />,
-          header: () => <AppHeader title="My KPI" mode="medium" accountMenu />,
+          header: () => <AppHeader title="My KPI" mode="medium" accountMenu notifications />,
         }}
       />
       {/* Reachable from the Attendance tab's "My schedule" row, not a bottom
@@ -108,6 +108,15 @@ export default function EmployeeLayout() {
           href: null,
           title: 'My Profile',
           header: () => <AppHeader title="My Profile" onBack={() => router.back()} />,
+        }}
+      />
+      {/* Reachable via the bell icon on AppHeader (notifications prop) —
+          same "not a bottom tab" reasoning as schedule/profile above. */}
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          href: null,
+          title: 'Notifications',
         }}
       />
     </Tabs>

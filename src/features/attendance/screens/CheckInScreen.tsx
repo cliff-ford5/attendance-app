@@ -2,7 +2,7 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { Button, Card, Chip, Dialog, Icon, Portal, Text, useTheme } from 'react-native-paper';
+import { Badge, Button, Card, Chip, Dialog, Icon, Portal, Text, useTheme } from 'react-native-paper';
 import { AppAvatar } from '@/components/AppAvatar';
 import { AppSegmentedButtons } from '@/components/AppSegmentedButtons';
 import { ErrorState, LoadingState, NotConfiguredState } from '@/components/ScreenState';
@@ -11,6 +11,7 @@ import { isSupabaseConfigured } from '@/services/supabase';
 import { statusColors } from '@/constants/theme';
 import { useAuth } from '@/features/auth/hooks/useAuth';
 import { useTodaysHoliday } from '@/features/holidays/hooks/useTodaysHoliday';
+import { useUnreadNotificationCount } from '@/features/notifications/hooks/useUnreadNotificationCount';
 import type { DayType } from '@/types/database';
 import { AttendanceStatCard } from '../components/AttendanceStatCard';
 import { SwipeToConfirm } from '../components/SwipeToConfirm';
@@ -54,6 +55,11 @@ export function CheckInScreen() {
   } = useAttendance(profile?.id, profile?.location_id, profile?.is_roaming);
   const daysThisMonth = useDaysCheckedInThisMonth(profile?.id);
   const todaysHoliday = useTodaysHoliday();
+  // This is the most-visited screen in the app (no bottom-tab header of
+  // its own — see the file-level comment on why), so it gets the same
+  // bell treatment as AppHeader's tab-root headers, not left out just
+  // because this screen doesn't use AppHeader at all.
+  const unreadNotifications = useUnreadNotificationCount(profile?.id);
   const [dayType, setDayType] = useState<DayType>('full');
   const [signOutConfirmVisible, setSignOutConfirmVisible] = useState(false);
 
@@ -102,9 +108,24 @@ export function CheckInScreen() {
             </Text>
           </View>
         </Pressable>
-        <Pressable onPress={() => setSignOutConfirmVisible(true)} accessibilityLabel="Sign out" hitSlop={8}>
-          <Icon source="logout" size={22} color={theme.colors.onSurfaceVariant} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={() => router.push('/(employee)/notifications')}
+            accessibilityLabel={unreadNotifications > 0 ? `Notifications, ${unreadNotifications} unread` : 'Notifications'}
+            hitSlop={8}
+            style={styles.bellWrap}
+          >
+            <Icon source="bell-outline" size={22} color={theme.colors.onSurfaceVariant} />
+            {unreadNotifications > 0 && (
+              <Badge size={16} style={[styles.bellBadge, { backgroundColor: theme.colors.primary }]}>
+                {unreadNotifications > 9 ? '9+' : unreadNotifications}
+              </Badge>
+            )}
+          </Pressable>
+          <Pressable onPress={() => setSignOutConfirmVisible(true)} accessibilityLabel="Sign out" hitSlop={8}>
+            <Icon source="logout" size={22} color={theme.colors.onSurfaceVariant} />
+          </Pressable>
+        </View>
       </View>
       <SignOutDialog
         visible={signOutConfirmVisible}
@@ -315,6 +336,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  bellWrap: {
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  bellBadge: {
+    position: 'absolute',
+    top: -4,
+    right: -6,
   },
   identityRow: {
     flex: 1,
