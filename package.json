@@ -16,6 +16,7 @@
     "expo-image-picker": "~57.0.15",
     "expo-linear-gradient": "~57.0.2",
     "expo-linking": "~57.0.9",
+    "expo-local-authentication": "~57.0.3",
     "expo-location": "~57.0.15",
     "expo-router": "~57.0.18",
     "expo-sharing": "~57.0.17",
@@ -45,6 +46,8 @@
     "android": "expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
+    "build-web": "node ./scripts/build-web.js",
+    "vercel-build": "node ./scripts/build-web.js",
     "lint": "expo lint"
   },
   "private": true

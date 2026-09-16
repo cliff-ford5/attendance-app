@@ -52,6 +52,17 @@
 
 ## Completed
 
+### 2026-09-16 — Show/hide password toggle, forgot-password flow, biometric app lock, and a package-id fix
+
+Four small additions, none needing each other, batched into one build:
+
+- **Show/hide password**: new `AppPasswordInput` (wraps `AppTextInput` with an eye-icon toggle) on Login and Register — previously every password field was permanently masked with no way to check what was typed. Same fix mirrored on `attendance-admin`'s login (plain Show/Hide button, no component library there).
+- **Forgot password**: real self-service recovery — previously the only fix for a forgotten password was an admin manually resetting it via Supabase Studio. See `CLAUDE.md`'s new "Account security" section for the full shape (cross-app redirect to `attendance-admin`, the Redirect-URL allow-list step you need to do in the Supabase dashboard, the new `EXPO_PUBLIC_ADMIN_WEB_URL` env var needed in both `.env.local` and EAS).
+- **Biometric app lock**: opt-in Face ID/fingerprint lock, toggled from `MyProfileScreen`, enforced by `BiometricGate` wrapping the whole app. Also see `CLAUDE.md`'s "Account security" section.
+- **Android package id fixed**: `com.anonymous.attendanceapp` (Expo's unconfigured default, a real technical tell that this is an Expo app) → `com.attendance.attendanceapp`. **Anyone with the app already installed needs to uninstall the old one before installing a build with this change** — Android treats a different package id as a different app, not an in-place update.
+
+**Manual steps still needed before forgot-password actually works end to end**: add `attendance-admin`'s deployed `/reset-password` URL to Supabase's Auth → URL Configuration → Redirect URLs, and set `EXPO_PUBLIC_ADMIN_WEB_URL` in EAS's Environment Variables (mirrors how the Supabase URL/key were added there).
+
 ### 2026-09-15 — In-app notifications (event-driven types only; push and the two time-based types still deferred)
 
 First real piece of the long-deferred Notifications item — scoped down from the full ask ("checkout reminders and task overdue") to what doesn't need an unanswered timing question first: `task_assigned` and `leave_decided`/`leave_submitted`, both fired directly off a real DB event.

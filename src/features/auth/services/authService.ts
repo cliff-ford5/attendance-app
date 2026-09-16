@@ -24,6 +24,23 @@ export async function signUp({ name, email, password }: SignUpInput): Promise<{ 
   return { needsEmailConfirmation: !data.session };
 }
 
+// The reset email links to a web page, not back into this app — a mobile
+// app can't be the direct target of an email link without deep-link
+// handling this project doesn't have. attendance-admin (already deployed,
+// already talks to the same Supabase project) hosts the actual
+// "set new password" page. Requires this exact URL to be added to
+// Supabase's Auth > URL Configuration > Redirect URLs allow-list in the
+// dashboard, or Supabase silently falls back to the default Site URL
+// instead of redirecting here.
+export async function sendPasswordReset(email: string): Promise<void> {
+  const adminWebUrl = process.env.EXPO_PUBLIC_ADMIN_WEB_URL;
+  if (!adminWebUrl) throw new Error('Password reset is not configured (EXPO_PUBLIC_ADMIN_WEB_URL is missing).');
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${adminWebUrl}/reset-password`,
+  });
+  if (error) throw error;
+}
+
 export async function signOut() {
   const { error } = await supabase.auth.signOut();
   if (error) throw error;

@@ -13,6 +13,7 @@
       "infoPlist": {
         "NSLocationWhenInUseUsageDescription": "Attendance uses your location when you check in or out to confirm you're at your assigned work location.",
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Attendance can automatically check you out when you leave your assigned work location, so you don't have to remember to do it yourself. This only runs while you're checked in.",
+        "NSFaceIDUsageDescription": "Attendance uses Face ID to lock the app when you enable it in your profile, so only you can open it.",
         "UIBackgroundModes": [
           "location"
         ]
@@ -59,6 +60,7 @@
       ],
       "expo-font",
       "expo-task-manager",
+      "expo-local-authentication",
       "expo-dev-client",
       "@react-native-community/datetimepicker",
       "expo-sharing",

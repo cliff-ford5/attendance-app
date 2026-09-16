@@ -65,6 +65,10 @@ export function LoginScreen() {
           Sign in
         </Button>
 
+        <Link href="/(auth)/forgot-password" style={styles.forgotLink}>
+          <Text variant="bodySmall">Forgot password?</Text>
+        </Link>
+
         <Link href="/(auth)/register" style={styles.link}>
           <Text variant="bodyMedium">New here? Create an account</Text>
         </Link>
@@ -99,6 +103,10 @@ const styles = StyleSheet.create({
   },
   link: {
     marginTop: 20,
+    alignSelf: 'center',
+  },
+  forgotLink: {
+    marginTop: 12,
     alignSelf: 'center',
   },
 });

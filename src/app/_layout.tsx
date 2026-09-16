@@ -8,6 +8,7 @@ import { PaperProvider } from 'react-native-paper';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import { darkTheme, lightTheme } from '@/constants/theme';
+import { BiometricGate } from '@/components/BiometricGate';
 import { AuthProvider } from '@/features/auth/hooks/useAuth';
 // Side-effect import: registers the geofence background task (TaskManager.defineTask)
 // unconditionally at load, per Expo's documented pattern — needed even before
@@ -68,10 +69,12 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <PaperProvider theme={theme}>
           <ThemeProvider value={isDark ? navigationDarkTheme : navigationLightTheme}>
-            <AuthProvider>
-              <StatusBar style={isDark ? 'light' : 'dark'} />
-              <Stack screenOptions={{ headerShown: false }} />
-            </AuthProvider>
+            <BiometricGate>
+              <AuthProvider>
+                <StatusBar style={isDark ? 'light' : 'dark'} />
+                <Stack screenOptions={{ headerShown: false }} />
+              </AuthProvider>
+            </BiometricGate>
           </ThemeProvider>
         </PaperProvider>
       </SafeAreaProvider>

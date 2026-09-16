@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { Button, Card, Dialog, Divider, HelperText, IconButton, Portal, Text, useTheme } from 'react-native-paper';
+import { Button, Card, Dialog, Divider, HelperText, IconButton, List, Portal, Switch, Text, useTheme } from 'react-native-paper';
 import { AppAvatar } from '@/components/AppAvatar';
 import { AppTextInput as TextInput } from '@/components/AppTextInput';
 import { LoadingState } from '@/components/ScreenState';
 import { useAuth } from '../hooks/useAuth';
 import { useAvatarUpload } from '../hooks/useAvatarUpload';
+import { useBiometricLock } from '../hooks/useBiometricLock';
 import { useUpdateMyName } from '../hooks/useUpdateMyName';
 
 // The signed-in user's own profile — name and avatar are self-editable
@@ -18,9 +19,23 @@ export function MyProfileScreen() {
   const { profile } = useAuth();
   const { uploading, removing, error: avatarError, pickAndUpload, removeAvatar } = useAvatarUpload();
   const { saving, error: nameError, updateName } = useUpdateMyName();
+  const { supported: biometricSupported, enabled: biometricEnabled, setEnabled: setBiometricEnabled } = useBiometricLock();
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState('');
   const [pendingRemove, setPendingRemove] = useState(false);
+  const [biometricError, setBiometricError] = useState<string | null>(null);
+  const [savingBiometric, setSavingBiometric] = useState(false);
+
+  async function handleBiometricToggle(next: boolean) {
+    setBiometricError(null);
+    setSavingBiometric(true);
+    try {
+      const ok = await setBiometricEnabled(next);
+      if (!ok) setBiometricError('Could not verify — try again.');
+    } finally {
+      setSavingBiometric(false);
+    }
+  }
 
   if (!profile) return <LoadingState label="Loading your profile…" />;
 
@@ -125,6 +140,23 @@ export function MyProfileScreen() {
         </Card.Content>
       </Card>
 
+      {biometricSupported && (
+        <Card style={styles.card}>
+          <Card.Content>
+            <List.Item
+              title="Require Face ID / fingerprint"
+              description="Lock the app when it's not in use — only you can open it."
+              descriptionNumberOfLines={2}
+              style={styles.biometricRow}
+              right={(props) => (
+                <Switch {...props} value={biometricEnabled} onValueChange={handleBiometricToggle} disabled={savingBiometric} />
+              )}
+            />
+            {biometricError && <HelperText type="error">{biometricError}</HelperText>}
+          </Card.Content>
+        </Card>
+      )}
+
       <Portal>
         <Dialog visible={pendingRemove} onDismiss={() => setPendingRemove(false)}>
           <Dialog.Title>Remove profile picture?</Dialog.Title>
@@ -190,5 +222,8 @@ const styles = StyleSheet.create({
   },
   divider: {
     marginVertical: 16,
+  },
+  biometricRow: {
+    paddingHorizontal: 0,
   },
 });
