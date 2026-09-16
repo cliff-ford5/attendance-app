@@ -1,4 +1,6 @@
+import * as Haptics from 'expo-haptics';
 import { useCallback, useState } from 'react';
+import { Platform } from 'react-native';
 import { useRefetchOnFocus } from '@/hooks/useRefetchOnFocus';
 import * as tasksService from '../services/tasksService';
 import type { TaskEditInput } from '../services/tasksService';
@@ -31,6 +33,13 @@ export function useMyTasks(employeeId: string | undefined) {
     try {
       const updated = await tasksService.updateTaskStatus(taskId, status);
       setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
+      // Shared by both the employee's own task list and the admin's
+      // per-employee Staff Profile tab, so this covers marking a task done
+      // either way. Only on completion — the Assigned/In progress toggles
+      // aren't a "success" moment worth a buzz.
+      if (status === 'done' && Platform.OS !== 'web') {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not update task.');
     } finally {

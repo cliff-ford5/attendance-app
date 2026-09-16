@@ -52,6 +52,15 @@
 
 ## Completed
 
+### 2026-09-16 — Haptic feedback, and closing the biometric lock's background-relock gap
+
+Second, final round for this build batch — both close real gaps rather than add new surface area:
+
+- **Haptic feedback** (`expo-haptics`, new native dependency): a success buzz on check-in, check-out, and marking a task done (`useAttendance`'s `performCheckIn`/`performCheckOut`, `useMyTasks`'s `setStatus` — the latter is shared by both the employee's own task list and the admin's per-employee Staff Profile tab, so marking done either way gets it). Physical confirmation on top of the visual one, easy to miss if attention's already drifted from the screen mid-action. `Platform.OS !== 'web'`-guarded, same as every other native-only call already in this codebase — `expo-haptics` has no meaningful web equivalent.
+- **Biometric lock now re-locks from the background, not just cold start** — the gap flagged as a known limitation the same day the feature shipped (see the entry below). An `AppState` listener in `useBiometricLock` records when the app is backgrounded and re-locks if more than 30 seconds have passed by the time it's foregrounded again — long enough that switching to check a notification or another app doesn't force a fresh fingerprint prompt every time, short enough that actually setting the phone down does re-lock it. No new permission, no new native dependency — `AppState` is core React Native.
+
+Both are pure JS/hook-level changes except the one new native module (`expo-haptics`), so this rides in the same build as the previous entry below — no separate build needed for these two specifically, but they weren't ready in time to be in that same commit.
+
 ### 2026-09-16 — Show/hide password toggle, forgot-password flow, biometric app lock, and a package-id fix
 
 Four small additions, none needing each other, batched into one build:

@@ -1,5 +1,14 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AppState, type AppStateStatus } from 'react-native';
 import * as biometricService from '../services/biometricService';
+
+// Below this, returning from the background doesn't re-lock — a quick
+// glance at a notification or another app shouldn't force a fresh
+// fingerprint prompt every single time. Above it, treat it like a fresh
+// cold start. 30s is a reasonable default for this app's stakes (not a
+// banking app); revisit if it ever feels too loose or too strict in
+// practice.
+const BACKGROUND_GRACE_MS = 30_000;
 
 // Backs both the MyProfileScreen toggle (enabled/setEnabled/supported) and
 // BiometricGate (locked/unlock) — one hook, two consumers, since they're
@@ -28,6 +37,32 @@ export function useBiometricLock() {
       setLoadingPreference(false);
     })();
   }, []);
+
+  // Re-locks after a real amount of time in the background — the gap the
+  // cold-start-only check originally left: backgrounding the app (switching
+  // away, locking the phone screen) without fully closing it never
+  // re-triggered the lock at all before this.
+  const appStateRef = useRef<AppStateStatus>(AppState.currentState);
+  const backgroundedAtRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextState) => {
+      const wasActive = appStateRef.current === 'active';
+      const isNowActive = nextState === 'active';
+
+      if (wasActive && !isNowActive) {
+        backgroundedAtRef.current = Date.now();
+      } else if (!wasActive && isNowActive) {
+        const backgroundedAt = backgroundedAtRef.current;
+        backgroundedAtRef.current = null;
+        if (enabled && backgroundedAt !== null && Date.now() - backgroundedAt > BACKGROUND_GRACE_MS) {
+          setLocked(true);
+        }
+      }
+      appStateRef.current = nextState;
+    });
+    return () => subscription.remove();
+  }, [enabled]);
 
   async function setEnabled(next: boolean) {
     if (next) {

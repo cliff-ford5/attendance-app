@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import { useCallback, useState } from 'react';
 import { Platform } from 'react-native';
 import { useRefetchOnFocus } from '@/hooks/useRefetchOnFocus';
@@ -111,6 +112,10 @@ export function useAttendance(employeeId: string | undefined, locationId?: strin
       // the address is patched in afterward, not blocking `busy`.
       const record = await attendanceService.checkIn(employeeId, coords, dayType, null, location?.expected_start);
       setOpenRecord(record);
+      // A physical confirmation on top of the visual one — SwipeToConfirm's
+      // success state is easy to miss if attention's already drifted away
+      // from the screen mid-swipe. No haptics module on web.
+      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       if (coords) {
         locationService
           .reverseGeocode(coords)
@@ -152,6 +157,7 @@ export function useAttendance(employeeId: string | undefined, locationId?: strin
       const recordId = openRecord.id;
       await attendanceService.checkOut(recordId, coords, 'manual', null, location?.expected_end);
       setOpenRecord(null);
+      if (Platform.OS !== 'web') Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
       if (coords) {
         locationService
           .reverseGeocode(coords)
