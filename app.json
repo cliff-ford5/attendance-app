@@ -33,7 +33,7 @@
         "android.permission.FOREGROUND_SERVICE",
         "android.permission.FOREGROUND_SERVICE_LOCATION"
       ],
-      "package": "com.anonymous.attendanceapp"
+      "package": "com.attendance.attendanceapp"
     },
     "web": {
       "output": "static",
