@@ -6,27 +6,7 @@ import { EmptyState, ErrorState, LoadingState, NotConfiguredState } from '@/comp
 import { isSupabaseConfigured } from '@/services/supabase';
 import { TaskCard } from '../components/TaskCard';
 import { useAllTasks } from '../hooks/useAllTasks';
-import { isOverdue, type TaskWithAssignee } from '../types';
-
-// "Overdue" is a computed flag (deadline passed, not done yet), not a real
-// status value — a task can be both "Assigned" and "Overdue" at once, so
-// this was never actually a single-select-shaped field. Multi-select
-// AppFilterSheet's checkboxes match what the data really is;
-// the old single-select chips just happened to work by accident since
-// "Overdue" was rarely combined with a real status in practice.
-type TaskFilterValue = 'overdue' | 'assigned' | 'in_progress' | 'done';
-
-const TASK_FILTER_OPTIONS: { value: TaskFilterValue; label: string }[] = [
-  { value: 'overdue', label: 'Overdue' },
-  { value: 'assigned', label: 'Assigned' },
-  { value: 'in_progress', label: 'In progress' },
-  { value: 'done', label: 'Done' },
-];
-
-function matchesAnyFilter(task: TaskWithAssignee, filters: TaskFilterValue[]): boolean {
-  if (filters.length === 0) return true;
-  return filters.some((f) => (f === 'overdue' ? isOverdue(task) : task.status === f));
-}
+import { TASK_FILTER_OPTIONS, matchesAnyTaskFilter, sortTasks, type TaskFilterValue } from '../types';
 
 // Read-only overview across all staff — assigning a task now happens from
 // that employee's own profile (features/staff/screens/StaffProfileScreen),
@@ -39,13 +19,13 @@ export function TasksOverviewScreen() {
   // Same "get everything, filter/sort client-side" pattern already used
   // throughout this app (admin dashboard stats, staff attendance) rather
   // than a dedicated filtered query — internal-tool data volume, and the
-  // full list is already fetched either way. Overdue tasks surface first
-  // regardless of filter, since those are the ones actually needing
-  // attention; everything else stays in the service's own deadline order.
-  const filteredTasks = useMemo(() => {
-    const matching = tasks.filter((t) => matchesAnyFilter(t, filters));
-    return [...matching].sort((a, b) => Number(isOverdue(b)) - Number(isOverdue(a)));
-  }, [tasks, filters]);
+  // full list is already fetched either way. sortTasks (shared with
+  // MyTasksScreen) puts not-done work first (overdue surfaced first among
+  // those), completed tasks last — previously this only re-sorted overdue
+  // first and left done tasks mixed into the plain deadline order, where a
+  // long-completed task's stale deadline could sort it ahead of real
+  // upcoming work.
+  const visibleTasks = useMemo(() => sortTasks(tasks.filter((t) => matchesAnyTaskFilter(t, filters))), [tasks, filters]);
 
   if (!isSupabaseConfigured) return <NotConfiguredState />;
   if (loading) return <LoadingState label="Loading tasks…" />;
@@ -54,7 +34,7 @@ export function TasksOverviewScreen() {
   return (
     <>
       <FlatList
-        data={filteredTasks}
+        data={visibleTasks}
         keyExtractor={(item) => item.id}
         refreshControl={<RefreshControl refreshing={false} onRefresh={reload} />}
         contentContainerStyle={styles.listContent}

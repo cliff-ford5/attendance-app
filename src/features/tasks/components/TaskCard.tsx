@@ -31,6 +31,7 @@ const PRIORITY_COLOR: Record<TaskPriority, string> = {
 export function TaskCard({
   task,
   assigneeName,
+  assignerName,
   onStatusChange,
   onEdit,
   onDelete,
@@ -38,6 +39,11 @@ export function TaskCard({
 }: {
   task: Task;
   assigneeName?: string;
+  // The reverse of assigneeName — shown on the employee's own task list so
+  // they know who actually gave them the task, not just what it is.
+  // Independent of assigneeName; a card only ever renders whichever one
+  // its screen actually passes.
+  assignerName?: string;
   // A direct 3-way status picker, not a single "advance" button — a task
   // marked done by mistake needs to go backward just as easily as forward,
   // and RLS (`tasks_update_assignee_or_admin`) already allows setting any
@@ -52,9 +58,10 @@ export function TaskCard({
   busy?: boolean;
 }) {
   const overdue = isOverdue(task);
+  const done = task.status === 'done';
 
   return (
-    <Card style={styles.card}>
+    <Card style={[styles.card, done && styles.cardDone]}>
       <Card.Content>
         <View style={styles.headerRow}>
           <Text variant="titleMedium" style={styles.title}>
@@ -84,7 +91,7 @@ export function TaskCard({
         </View>
 
         {task.description ? (
-          <Text variant="bodyMedium" style={styles.description}>
+          <Text variant="bodyMedium" style={styles.description} numberOfLines={4}>
             {task.description}
           </Text>
         ) : null}
@@ -94,8 +101,15 @@ export function TaskCard({
             Assigned to {assigneeName}
           </Text>
         )}
+        {assignerName && (
+          <Text variant="bodySmall" style={styles.meta}>
+            Assigned by {assignerName}
+          </Text>
+        )}
         <Text variant="bodySmall" style={styles.meta}>
-          Due {new Date(task.deadline).toLocaleString()}
+          {done && task.completed_at
+            ? `Completed ${new Date(task.completed_at).toLocaleString()}`
+            : `Due ${new Date(task.deadline).toLocaleString()}`}
         </Text>
         <View style={styles.priorityRow}>
           <Icon source="flag" size={14} color={PRIORITY_COLOR[task.priority]} />
@@ -125,6 +139,12 @@ const styles = StyleSheet.create({
   card: {
     marginHorizontal: 16,
     marginVertical: 6,
+  },
+  // A subtle visual "this is done" cue beyond the status chip — a plain
+  // white card reads identically whether it's active work or finished,
+  // which made a long list of mixed tasks harder to scan at a glance.
+  cardDone: {
+    opacity: 0.6,
   },
   headerRow: {
     flexDirection: 'row',

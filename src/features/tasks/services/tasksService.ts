@@ -1,15 +1,19 @@
 import { supabase } from '@/services/supabase';
 import type { Task, TaskPriority, TaskStatus } from '@/types/database';
-import type { NewTaskInput, TaskWithAssignee } from '../types';
+import type { NewTaskInput, TaskWithAssignee, TaskWithAssigner } from '../types';
 
-export async function getMyTasks(employeeId: string): Promise<Task[]> {
+// Joins the assigner's name — shown on the employee's own task list so
+// they know who actually gave them the task, not just what it is. Also
+// used by StaffProfileScreen's admin per-employee tab (same hook, same
+// query), where it's equally useful if more than one admin assigns tasks.
+export async function getMyTasks(employeeId: string): Promise<TaskWithAssigner[]> {
   const { data, error } = await supabase
     .from('tasks')
-    .select('*')
+    .select('*, assigner:employees!tasks_assigned_by_fkey(id, name)')
     .eq('assigned_to', employeeId)
     .order('deadline', { ascending: true });
   if (error) throw error;
-  return (data ?? []) as Task[];
+  return (data ?? []) as unknown as TaskWithAssigner[];
 }
 
 export async function getAllTasks(): Promise<TaskWithAssignee[]> {
@@ -81,4 +85,14 @@ export async function updateTask(taskId: string, input: TaskEditInput): Promise<
 export async function deleteTask(taskId: string): Promise<void> {
   const { error } = await supabase.from('tasks').delete().eq('id', taskId);
   if (error) throw error;
+}
+
+// Admin-only in practice (RLS: tasks_update_assignee_or_admin, plus
+// 0029's tasks_restrict_self_update trigger blocks a non-admin from
+// touching assigned_to at all). Previously the only fix for a task
+// assigned to the wrong person was delete and recreate.
+export async function reassignTask(taskId: string, newAssignedTo: string): Promise<Task> {
+  const { data, error } = await supabase.from('tasks').update({ assigned_to: newAssignedTo }).eq('id', taskId).select('*').single();
+  if (error) throw error;
+  return data as Task;
 }

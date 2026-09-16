@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { FlatList, ScrollView, SectionList, StyleSheet, View } from 'react-native';
 import { Chip, Card, Dialog, FAB, HelperText, IconButton, List, Menu, Portal, Switch, Text, useTheme, Button as PaperButton } from 'react-native-paper';
 import { AppAvatar } from '@/components/AppAvatar';
@@ -15,7 +15,7 @@ import { DAY_LABELS, SCHEDULE_DAY_ORDER } from '@/features/schedule/constants';
 import { useMySchedule } from '@/features/schedule/hooks/useMySchedule';
 import { TaskCard } from '@/features/tasks/components/TaskCard';
 import { useMyTasks } from '@/features/tasks/hooks/useMyTasks';
-import type { Task } from '@/features/tasks/types';
+import { sortTasks, type Task } from '@/features/tasks/types';
 import { groupByDay } from '@/lib/groupByDay';
 import { useEmployeeProfile } from '../hooks/useEmployeeProfile';
 
@@ -41,6 +41,10 @@ export function StaffProfileScreen() {
     reload,
   } = useEmployeeProfile(id);
   const { tasks, loading: loadingTasks, updatingId, deletingId, setStatus, remove: removeTask } = useMyTasks(id);
+  // Same fix as MyTasksScreen/TasksOverviewScreen — without this, a
+  // long-completed task's stale deadline could sort it ahead of this
+  // employee's real upcoming work.
+  const sortedTasks = useMemo(() => sortTasks(tasks), [tasks]);
   const {
     records: attendanceRecords,
     loading: loadingAttendance,
@@ -271,7 +275,7 @@ export function StaffProfileScreen() {
         <View style={styles.flex}>
           <FlatList
             style={styles.flex}
-            data={tasks}
+            data={sortedTasks}
             keyExtractor={(item) => item.id}
             ListHeaderComponent={
               <View>
@@ -284,6 +288,7 @@ export function StaffProfileScreen() {
             renderItem={({ item }) => (
               <TaskCard
                 task={item}
+                assignerName={item.assigner?.name}
                 busy={updatingId === item.id || deletingId === item.id}
                 onStatusChange={(status) => setStatus(item.id, status)}
                 onEdit={() =>

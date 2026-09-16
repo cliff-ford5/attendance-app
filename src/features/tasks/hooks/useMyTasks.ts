@@ -4,10 +4,10 @@ import { Platform } from 'react-native';
 import { useRefetchOnFocus } from '@/hooks/useRefetchOnFocus';
 import * as tasksService from '../services/tasksService';
 import type { TaskEditInput } from '../services/tasksService';
-import type { Task, TaskStatus } from '../types';
+import type { TaskStatus, TaskWithAssigner } from '../types';
 
 export function useMyTasks(employeeId: string | undefined) {
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [tasks, setTasks] = useState<TaskWithAssigner[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
@@ -32,7 +32,10 @@ export function useMyTasks(employeeId: string | undefined) {
     setUpdatingId(taskId);
     try {
       const updated = await tasksService.updateTaskStatus(taskId, status);
-      setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
+      // Merge, don't replace — `updated` is a plain Task (no assigner
+      // join), so replacing the whole row would silently drop the
+      // assigner name shown on this list until the next full reload.
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...updated } : t)));
       // Shared by both the employee's own task list and the admin's
       // per-employee Staff Profile tab, so this covers marking a task done
       // either way. Only on completion — the Assigned/In progress toggles
@@ -52,10 +55,29 @@ export function useMyTasks(employeeId: string | undefined) {
     setError(null);
     try {
       const updated = await tasksService.updateTask(taskId, input);
-      setTasks((prev) => prev.map((t) => (t.id === taskId ? updated : t)));
+      setTasks((prev) => prev.map((t) => (t.id === taskId ? { ...t, ...updated } : t)));
       return true;
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save changes to this task.');
+      return false;
+    } finally {
+      setUpdatingId(null);
+    }
+  }
+
+  // Removes the task from this list on success, not merges it — once
+  // reassigned, it no longer belongs to this employee, so it shouldn't
+  // stay visible on their (or this admin's per-employee) list until the
+  // next reload.
+  async function reassign(taskId: string, newAssignedTo: string) {
+    setUpdatingId(taskId);
+    setError(null);
+    try {
+      await tasksService.reassignTask(taskId, newAssignedTo);
+      setTasks((prev) => prev.filter((t) => t.id !== taskId));
+      return true;
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not reassign this task.');
       return false;
     } finally {
       setUpdatingId(null);
@@ -75,5 +97,5 @@ export function useMyTasks(employeeId: string | undefined) {
     }
   }
 
-  return { tasks, loading, error, updatingId, deletingId, setStatus, edit, remove, reload: load };
+  return { tasks, loading, error, updatingId, deletingId, setStatus, edit, reassign, remove, reload: load };
 }

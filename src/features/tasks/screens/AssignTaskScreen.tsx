@@ -1,12 +1,14 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Platform, ScrollView, StyleSheet } from 'react-native';
-import { Button, HelperText, useTheme } from 'react-native-paper';
+import { Button, Dialog, Divider, HelperText, List, Portal, Searchbar, Text, useTheme } from 'react-native-paper';
 import { AppHeader } from '@/components/AppHeader';
 import { AppSegmentedButtons } from '@/components/AppSegmentedButtons';
 import { AppTextInput as TextInput } from '@/components/AppTextInput';
 import { useAuth } from '@/features/auth/hooks/useAuth';
+import * as staffService from '@/features/staff/services/staffService';
+import type { Employee } from '@/types/database';
 import { openAndroidDateTimePicker } from '@/lib/androidDateTimePicker';
 import { useCreateTask } from '../hooks/useCreateTask';
 import { useMyTasks } from '../hooks/useMyTasks';
@@ -29,7 +31,7 @@ export function AssignTaskScreen() {
   const router = useRouter();
   const { employeeId, employeeName, taskId } = useLocalSearchParams<{ employeeId: string; employeeName?: string; taskId?: string }>();
   const { profile: currentAdmin } = useAuth();
-  const { tasks, updatingId, edit: editTask, reload: reloadTasks } = useMyTasks(employeeId);
+  const { tasks, updatingId, edit: editTask, reassign, reload: reloadTasks } = useMyTasks(employeeId);
   const { create, submitting, error: createError } = useCreateTask(currentAdmin?.id);
 
   const editingTask = taskId ? tasks.find((t) => t.id === taskId) : undefined;
@@ -41,6 +43,21 @@ export function AssignTaskScreen() {
   const [deadline, setDeadline] = useState(defaultDeadline());
   const [pickerVisible, setPickerVisible] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  // Correcting who a task belongs to is a genuinely different action from
+  // assigning one in the first place — that's deliberately implicit from
+  // which employee's profile you're on (CLAUDE.md's Task assignment
+  // section), with no employee picker anywhere. Reassignment has no
+  // "implicit" employee to fall back on once a task already belongs to
+  // someone else, so it's the one place in this feature that needs an
+  // explicit picker — only reachable from editing an existing task, never
+  // from creating one.
+  const [reassignVisible, setReassignVisible] = useState(false);
+  const [reassignSearch, setReassignSearch] = useState('');
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [loadingEmployees, setLoadingEmployees] = useState(false);
+  const [reassigning, setReassigning] = useState(false);
+  const [reassignError, setReassignError] = useState<string | null>(null);
 
   // Pre-fill once the task shows up in the list (it's already loading by
   // the time this screen mounts in the common case, but this covers a
@@ -72,6 +89,46 @@ export function AssignTaskScreen() {
       router.back();
     }
   }
+
+  async function openReassignPicker() {
+    setReassignError(null);
+    setReassignSearch('');
+    setReassignVisible(true);
+    if (employees.length === 0) {
+      setLoadingEmployees(true);
+      try {
+        setEmployees(await staffService.getAllEmployees());
+      } catch {
+        setReassignError('Could not load staff.');
+      } finally {
+        setLoadingEmployees(false);
+      }
+    }
+  }
+
+  async function handleReassign(newEmployeeId: string) {
+    if (!taskId) return;
+    setReassigning(true);
+    setReassignError(null);
+    try {
+      const ok = await reassign(taskId, newEmployeeId);
+      if (ok) {
+        // The task no longer belongs to `employeeId` once reassigned —
+        // nothing left to edit in this screen's context, so close it
+        // rather than continue showing a now-stale form.
+        router.back();
+      } else {
+        setReassignError('Could not reassign this task.');
+      }
+    } finally {
+      setReassigning(false);
+    }
+  }
+
+  const filteredEmployees = useMemo(() => {
+    const q = reassignSearch.trim().toLowerCase();
+    return employees.filter((e) => e.id !== employeeId && (!q || e.name.toLowerCase().includes(q)));
+  }, [employees, reassignSearch, employeeId]);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -117,6 +174,50 @@ export function AssignTaskScreen() {
       <Button mode="contained" onPress={handleSubmit} loading={busy} disabled={busy || title.trim().length === 0}>
         {isEditing ? 'Save changes' : `Assign to ${firstName}`}
       </Button>
+
+      {isEditing && (
+        <>
+          <Divider style={styles.divider} />
+          <Text variant="labelLarge" style={styles.reassignLabel}>
+            Currently assigned to {firstName}
+          </Text>
+          <Button mode="outlined" icon="account-switch-outline" textColor={theme.colors.onSurface} onPress={openReassignPicker}>
+            Reassign to someone else
+          </Button>
+        </>
+      )}
+
+      <Portal>
+        <Dialog visible={reassignVisible} onDismiss={() => setReassignVisible(false)} style={styles.dialog}>
+          <Dialog.Title>Reassign task</Dialog.Title>
+          <Dialog.Content>
+            <Searchbar placeholder="Search staff" value={reassignSearch} onChangeText={setReassignSearch} style={styles.searchbar} />
+            {reassignError && <HelperText type="error">{reassignError}</HelperText>}
+          </Dialog.Content>
+          <ScrollView style={styles.employeeList}>
+            {loadingEmployees ? (
+              <Text style={styles.emptyHint}>Loading…</Text>
+            ) : filteredEmployees.length === 0 ? (
+              <Text style={styles.emptyHint}>No staff match this search.</Text>
+            ) : (
+              filteredEmployees.map((e) => (
+                <List.Item
+                  key={e.id}
+                  title={e.name}
+                  description={e.position || e.department || e.email}
+                  onPress={() => handleReassign(e.id)}
+                  disabled={reassigning}
+                />
+              ))
+            )}
+          </ScrollView>
+          <Dialog.Actions>
+            <Button onPress={() => setReassignVisible(false)} disabled={reassigning}>
+              Cancel
+            </Button>
+          </Dialog.Actions>
+        </Dialog>
+      </Portal>
     </ScrollView>
   );
 }
@@ -128,5 +229,27 @@ const styles = StyleSheet.create({
   },
   input: {
     marginBottom: 12,
+  },
+  divider: {
+    marginVertical: 20,
+  },
+  reassignLabel: {
+    marginBottom: 8,
+    opacity: 0.7,
+  },
+  dialog: {
+    maxHeight: '80%',
+  },
+  searchbar: {
+    marginBottom: 4,
+  },
+  employeeList: {
+    maxHeight: 320,
+    paddingHorizontal: 8,
+  },
+  emptyHint: {
+    textAlign: 'center',
+    paddingVertical: 16,
+    opacity: 0.6,
   },
 });

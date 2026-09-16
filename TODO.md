@@ -52,6 +52,19 @@
 
 ## Completed
 
+### 2026-09-16 — Task feature audit: reassignment, RLS tightening, sort/filter fixes, UI polish
+
+Full audit of the Tasks feature (service, RLS, both screens) before this build batch, requested directly rather than found incidentally. Six real findings, all fixed:
+
+1. **No reassignment** — a task assigned to the wrong person could only be deleted and recreated. Added `reassignTask` + a searchable employee-picker on the edit form (`AssignTaskScreen`) — the one place this feature needed an explicit picker, since correcting an existing task's assignee has no "implicit" employee to fall back on the way initial assignment does (creation stays picker-free, unchanged, per the original resolved decision).
+2. **RLS allowed more than the UI ever exposed** — `tasks_update_assignee_or_admin` grants UPDATE on every column to whoever a task is assigned to, not just status, so a non-admin could in principle change their own task's deadline/priority/assignee via a direct API call. Fixed with `supabase/0029_tasks_restrict_self_update.sql`, same column-restriction-trigger pattern as `employees`/`notifications`.
+3. **Done tasks weren't sorted to the bottom, anywhere** — `MyTasksScreen` and the admin `TasksOverviewScreen` both sorted primarily by deadline, so an old completed task's stale deadline could sort ahead of real upcoming work. New shared `sortTasks` (in `features/tasks/types.ts`) fixes both, plus `StaffProfileScreen`'s admin per-employee tab, which had the same issue.
+4. **The employee's own task list had no filter at all** — every other list screen in this app got the `AppFilterButton`/`AppFilterSheet` treatment; this one didn't. Now shares the exact same Overdue/Assigned/In progress/Done filter as the admin overview (also extracted to `types.ts` so both screens use one definition, not two copies).
+5. **No visibility into who assigned a task**, on the employee's own view. `getMyTasks` now joins the assigner's name; `TaskCard` shows "Assigned by" alongside "Assigned to".
+6. **UI polish**: `TaskCard` gained a subtly dimmed style for done tasks, a real completion timestamp in place of a stale "Due" date once done, and a 4-line cap on long descriptions so one runaway task doesn't distort the whole list's scroll rhythm.
+
+A real bug caught while wiring #1/#3 in: `setStatus`/`edit` in `useMyTasks` were replacing the whole task row with the plain-`Task`-shaped service response, which would have silently dropped the newly-added `assigner` join on every status change or edit until the next full reload. Fixed to merge (`{ ...t, ...updated }`) instead of replace.
+
 ### 2026-09-16 — Haptic feedback, and closing the biometric lock's background-relock gap
 
 Second, final round for this build batch — both close real gaps rather than add new surface area:
