@@ -2,6 +2,7 @@ import { Link } from 'expo-router';
 import { useState } from 'react';
 import { Image, KeyboardAvoidingView, Platform, StyleSheet, View } from 'react-native';
 import { Button, HelperText, Text } from 'react-native-paper';
+import { AppPasswordInput } from '@/components/AppPasswordInput';
 import { AppTextInput as TextInput } from '@/components/AppTextInput';
 import { NotConfiguredState } from '@/components/ScreenState';
 import { isSupabaseConfigured } from '@/services/supabase';
@@ -51,11 +52,10 @@ export function LoginScreen() {
           textContentType="emailAddress"
           style={styles.input}
         />
-        <TextInput
+        <AppPasswordInput
           label="Password"
           value={password}
           onChangeText={setPassword}
-          secureTextEntry
           textContentType="password"
           style={styles.input}
         />
